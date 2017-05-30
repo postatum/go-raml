@@ -69,6 +69,22 @@ func ParseFile(filePath string, root Root) error {
 	return err
 }
 
+func LoadFile(filePath string) ([]byte, error) {
+	workDir, fileName := filepath.Split(filePath)
+
+	// Read original file contents into a byte array
+	mainFileBytes, err := readFileOrURL(workDir, fileName)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	// Get the contents of the main file
+	mainFileBuffer := bytes.NewBuffer(mainFileBytes)
+
+	// Pre-process the original file, following !include directive
+	return preProcess(mainFileBuffer, workDir)
+}
+
 // ParseReadFile parse an .raml file.
 // It returns API definition and the concatenated .raml file.
 func ParseReadFile(workDir, fileName string, root Root) ([]byte, error) {
