@@ -69,7 +69,8 @@ func ParseFile(filePath string, root Root) error {
 	return err
 }
 
-func LoadFile(filePath string) ([]byte, error) {
+// PreProcessFile loads file content and includes in it using preProcess()
+func PreProcessFile(filePath string) ([]byte, error) {
 	workDir, fileName := filepath.Split(filePath)
 
 	// Read original file contents into a byte array
