@@ -162,6 +162,11 @@ func ParseReadFile(workDir, fileName string, root Root) ([]byte, error) {
 	return preprocessedContentsBytes, nil
 }
 
+func ReadFileOrUrl(fpath string) ([]byte, error) {
+	workDir, fileName := filepath.Split(filePath)
+	return readFileOrURL(workDir, fileName)
+}
+
 // read raml file/url
 func readFileOrURL(workingDir, fileName string) ([]byte, error) {
 	// read from URL if it is an URL, otherwise read from local file.
