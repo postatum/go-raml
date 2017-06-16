@@ -163,7 +163,7 @@ func ParseReadFile(workDir, fileName string, root Root) ([]byte, error) {
 }
 
 func ReadFileOrUrl(fpath string) ([]byte, error) {
-	workDir, fileName := filepath.Split(filePath)
+	workDir, fileName := filepath.Split(fpath)
 	return readFileOrURL(workDir, fileName)
 }
 
