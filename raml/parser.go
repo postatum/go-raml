@@ -74,7 +74,7 @@ func PreProcessFile(filePath string) ([]byte, error) {
 	workDir, fileName := filepath.Split(filePath)
 
 	// Read original file contents into a byte array
-	mainFileBytes, err := readFileOrURL(workDir, fileName)
+	mainFileBytes, err := ReadFileOrURL(workDir, fileName)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -94,7 +94,7 @@ func ParseReadFile(workDir, fileName string, root Root) ([]byte, error) {
 	}
 
 	// Read original file contents into a byte array
-	mainFileBytes, err := readFileOrURL(workDir, fileName)
+	mainFileBytes, err := ReadFileOrURL(workDir, fileName)
 
 	if err != nil {
 		return []byte{}, err
@@ -162,13 +162,8 @@ func ParseReadFile(workDir, fileName string, root Root) ([]byte, error) {
 	return preprocessedContentsBytes, nil
 }
 
-func ReadFileOrUrl(fpath string) ([]byte, error) {
-	workDir, fileName := filepath.Split(fpath)
-	return readFileOrURL(workDir, fileName)
-}
-
 // read raml file/url
-func readFileOrURL(workingDir, fileName string) ([]byte, error) {
+func ReadFileOrURL(workingDir, fileName string) ([]byte, error) {
 	// read from URL if it is an URL, otherwise read from local file.
 	if isURL(fileName) {
 		return readURL(fileName)
@@ -245,7 +240,7 @@ func preProcess(originalContents io.Reader, workingDirectory string) ([]byte, er
 
 			// Get the included file contents
 			includedContents, err :=
-				readFileOrURL(workingDirectory, included)
+				ReadFileOrURL(workingDirectory, included)
 
 			if err != nil {
 				return nil,
