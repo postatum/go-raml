@@ -241,7 +241,7 @@ func toProperty(name string, p interface{}) Property {
 			case "capnpType":
 				p.CapnpType = v.(string)
 			case "properties":
-				log.Fatalf("Properties field of '%v' should already be deleted. Seems there are unsupported inline type", name)
+				log.Panicf("Properties field of '%v' should already be deleted. Seems there are unsupported inline type", name)
 			}
 		}
 		return p
@@ -680,7 +680,7 @@ func (t *Type) parseOptionalProperty(name string) {
 		propMap["required"] = false
 		t.Properties[newName] = propMap
 	default:
-		log.Fatalf("unexpeced property type: %v", p)
+		log.Panicf("unexpeced property type: %v", p)
 	}
 }
 
