@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/Jumpscale/go-raml/commands"
@@ -10,21 +11,28 @@ import (
 	"github.com/codegangsta/cli"
 )
 
-//Version define software version
-var Version = "0.1-Dev"
+var (
+	//Version define software version
+	Version = "v1.1.0"
 
-//ApplicationName is the name of the application
-var ApplicationName = "RAML code generation toolset"
+	//ApplicationName is the name of the application
+	ApplicationName = "RAML code generation toolset"
+)
 
 var (
-	serverCommand = &commands.ServerCommand{}
-	clientCommand = &commands.ClientCommand{}
-	capnpCommand  = &commands.CapnpCommand{}
-	specCommand   = &commands.SpecCommand{}
-	docsCommand   = &commands.DocsCommand{}
+	serverCommand      = &commands.ServerCommand{}
+	clientCommand      = &commands.ClientCommand{}
+	capnpCommand       = &commands.CapnpCommand{}
+	docsCommand        = &commands.DocsCommand{}
+	pythonCapnpCommand = &commands.PythonCapnp{}
 )
 
 func main() {
+	cli.VersionPrinter = func(c *cli.Context) {
+		fmt.Printf("Version: %v\nCommit Hash: %v\nBuild Date:%v\n",
+			Version, commands.CommitHash, commands.BuildDate)
+	}
+
 	app := cli.NewApp()
 	app.Name = ApplicationName
 	app.Version = Version
@@ -98,11 +106,6 @@ func main() {
 					Usage:       "import path of the generated code. Set automatically if target dir under $GOPATH",
 					Destination: &serverCommand.ImportPath,
 				},
-				cli.BoolFlag{
-					Name:        "api-file-per-method",
-					Usage:       "Generate one API implementation file per method (only for Go)",
-					Destination: &serverCommand.APIFilePerMethod,
-				},
 				cli.StringFlag{
 					Name:        "lib-root-urls",
 					Usage:       "Array of libraries root URLs",
@@ -146,20 +149,25 @@ func main() {
 				},
 				cli.StringFlag{
 					Name:        "import-path",
-					Value:       "examples.com/client",
-					Usage:       "import path of the generated code",
+					Value:       "",
+					Usage:       "golang import path of the generated code",
 					Destination: &clientCommand.ImportPath,
 				},
 				cli.StringFlag{
 					Name:        "kind",
 					Value:       "requests",
-					Usage:       "Kind of client to generate (requests,aiohttp)",
+					Usage:       "Kind of python client to generate (requests,aiohttp)",
 					Destination: &clientCommand.Kind,
 				},
 				cli.StringFlag{
 					Name:        "lib-root-urls",
 					Usage:       "Array of libraries root URLs",
 					Destination: &clientCommand.LibRootURLs,
+				},
+				cli.BoolFlag{
+					Name:        "python-unmarshall-response",
+					Usage:       "set to true for python client to unmarshall the response into python class",
+					Destination: &clientCommand.PythonUnmarshallResponse,
 				},
 			},
 			Action: func(c *cli.Context) {
@@ -202,6 +210,29 @@ func main() {
 			Action: func(c *cli.Context) {
 				err := errors.New("Not implemented, check the roadmap")
 				log.Error(err)
+			},
+		}, {
+			Name:  "python-capnp",
+			Usage: "Create python classes for raml types with capnp conversion",
+
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:        "dir",
+					Value:       ".",
+					Usage:       "target directory",
+					Destination: &pythonCapnpCommand.Dir,
+				},
+				cli.StringFlag{
+					Name:        "ramlfile",
+					Value:       ".",
+					Usage:       "Source raml file",
+					Destination: &pythonCapnpCommand.RAMLFile,
+				},
+			},
+			Action: func(c *cli.Context) {
+				if err := pythonCapnpCommand.Execute(); err != nil {
+					log.Error(err)
+				}
 			},
 		},
 		{
@@ -253,5 +284,7 @@ func main() {
 		cli.ShowAppHelp(c)
 	}
 
-	app.Run(os.Args)
+	if err := app.Run(os.Args); err != nil {
+		os.Exit(1)
+	}
 }

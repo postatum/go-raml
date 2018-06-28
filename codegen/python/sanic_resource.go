@@ -22,14 +22,36 @@ func newSanicRouteView(endpoint string) sanicRouteView {
 	name = strings.Replace(name, ">/", "_", -1)
 	name = strings.Replace(name, "/", "_", -1)
 	name = strings.Replace(name, ">", "", -1)
+	name = commons.NormalizeIdentifier(name)
 
 	return sanicRouteView{
 		Name:     name,
 		Endpoint: endpoint,
 	}
 }
+
+func (srv sanicRouteView) Route() string {
+	if len(srv.Methods) == 0 {
+		return srv.Endpoint
+	}
+	// first method is enough to generate route
+	// because all methods has same route
+	return srv.Methods[0].Route()
+}
+
+func (srv sanicRouteView) RouteCatchAll() string {
+	return srv.Methods[0].RouteCatchAll()
+}
+
+func (srv sanicRouteView) IsCatchAllRoute() bool {
+	if len(srv.Methods) == 0 {
+		return false
+	}
+	return srv.Methods[0].IsCatchAllRoute()
+}
+
 func (s SanicServer) generateResources(dir string) error {
-	if err := s.generateResourcesAPIImpl(dir); err != nil {
+	if err := generateResources(s.ResourcesDef, s.Template, dir); err != nil {
 		return err
 	}
 	if err := s.generateResourcesAPIIface(dir); err != nil {
@@ -43,9 +65,7 @@ func (s SanicServer) generateResourcesAPIIface(dir string) error {
 	for _, pr := range s.ResourcesDef {
 		// create sanicRouteView objects
 		srvMap := map[string]sanicRouteView{}
-		for _, m := range pr.Methods {
-			pm := m.(serverMethod)
-
+		for _, pm := range pr.Methods {
 			srv, ok := srvMap[pm.Endpoint]
 			if !ok {
 				srv = newSanicRouteView(pm.Endpoint)
@@ -62,20 +82,10 @@ func (s SanicServer) generateResourcesAPIIface(dir string) error {
 			"RouteView": srvMap,
 			"PR":        pr,
 		}
-		if err := commons.GenerateFile(ctx, "./templates/server_resources_if_python_sanic.tmpl", "server_resources_if_python_sanic", filename, true); err != nil {
+		if err := commons.GenerateFile(ctx, "./templates/python/server_resource_if_sanic.tmpl", "server_resource_if_sanic", filename, true); err != nil {
 			return err
 		}
 	}
 
-	return nil
-}
-
-func (s SanicServer) generateResourcesAPIImpl(dir string) error {
-	for _, pr := range s.ResourcesDef {
-		filename := filepath.Join(dir, strings.ToLower(pr.Name)+"_api.py")
-		if err := pr.generate(filename, "./templates/server_resources_api_python_sanic.tmpl", "server_resources_api_python_sanic", dir); err != nil {
-			return err
-		}
-	}
 	return nil
 }

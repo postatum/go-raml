@@ -35,22 +35,13 @@ func newEnum(name string, prop raml.Property, fromClass bool) *enum {
 	return &e
 }
 
-func newEnumFromWtfClass(pc *wtfClass) *enum {
-	prop := raml.Property{
-		Type: fmt.Sprint(pc.T.Type),
-		Name: "",
-		Enum: pc.T.Enum,
-	}
-	return newEnum(pc.Name, prop, true)
-}
-
 func newEnumFromClass(pc *class) *enum {
 	prop := raml.Property{
 		Type: fmt.Sprint(pc.T.Type),
 		Name: "",
 		Enum: pc.T.Enum,
 	}
-	return newEnum(pc.Name, prop, true)
+	return newEnum(pc.Name(), prop, true)
 }
 
 func newEnumField(f interface{}, e enum) enumField {
@@ -85,5 +76,5 @@ func newEnumField(f interface{}, e enum) enumField {
 
 func (e *enum) generate(dir string) error {
 	filename := filepath.Join(dir, e.Name+".py")
-	return commons.GenerateFile(e, "./templates/enum_python.tmpl", "enum_python", filename, true)
+	return commons.GenerateFile(e, "./templates/python/enum_python.tmpl", "enum_python", filename, true)
 }

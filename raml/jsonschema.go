@@ -2,6 +2,7 @@ package raml
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 )
 
@@ -16,6 +17,7 @@ type JSONSchema struct {
 	Name        string              `json:"-"`
 	Description string              `json:"description,omitempty"`
 	Type        string              `json:"type"`
+	T           *Type               `json:"-"` // underlying RAML type
 	Items       *arrayItem          `json:"items,omitempty"`
 	Properties  map[string]property `json:"properties,omitempty"`
 	Required    []string            `json:"required,omitempty"`
@@ -46,8 +48,8 @@ func NewJSONSchemaFromProps(t *Type, properties map[string]interface{}, typ, nam
 	}
 
 	props := make(map[string]property, len(properties))
-	for k, v := range properties {
-		rp := ToProperty(k, v)
+	for name := range properties {
+		rp := t.GetProperty(name)
 		if !isPropTypeSupported(rp) {
 			continue
 		}
@@ -61,15 +63,24 @@ func NewJSONSchemaFromProps(t *Type, properties map[string]interface{}, typ, nam
 
 	// we need it to be sorted for testing purpose
 	sort.Strings(required)
-	return JSONSchema{
+	js := JSONSchema{
 		Schema:     schemaVer,
 		Name:       name,
 		Type:       typ,
+		T:          t,
 		Properties: props,
 		Required:   required,
 	}
+	if js.T == nil {
+		js.T = &Type{
+			Type:       typ,
+			Properties: properties,
+		}
+	}
+	return js
 }
 
+// Inherit inherits JSON schema from the parents
 func (js *JSONSchema) Inherit(parents []JSONSchema) {
 	// inherit `properties` and `required`
 	// only inherit if the property name not exist in
@@ -145,7 +156,7 @@ func (js *JSONSchema) isRequired(propName string) bool {
 type property struct {
 	Name     string      `json:"-"`
 	Ref      string      `json:"$ref,omitempty"`
-	Type     string      `json:"type,omitempty"`
+	Type     interface{} `json:"type,omitempty"`
 	Required bool        `json:"-"`
 	Enum     interface{} `json:"enum,omitempty"`
 
@@ -167,13 +178,13 @@ type property struct {
 }
 
 func newProperty(rp Property) property {
-	_, isScalar := scalarTypes[rp.Type]
+	_, isScalar := scalarTypes[rp.TypeString()]
 
 	// complex type
 	if rp.Type != "" && !isScalar && !rp.IsArray() && !rp.IsBidimensiArray() {
 		return property{
 			Name:     rp.Name,
-			Ref:      rp.Type + fileSuffix,
+			Ref:      rp.TypeString() + fileSuffix,
 			Required: rp.Required,
 		}
 	}
@@ -198,6 +209,8 @@ func newProperty(rp Property) property {
 			"long":   "integer",
 			"float":  "number",
 			"double": "number",
+
+			"object": "object",
 		}
 		if v, ok := typeMap[t]; ok {
 			return v
@@ -206,7 +219,7 @@ func newProperty(rp Property) property {
 	}
 	p := property{
 		Name:        rp.Name,
-		Type:        mapTypes(rp.Type),
+		Type:        mapTypes(rp.TypeString()),
 		Required:    rp.Required,
 		Enum:        rp.Enum,
 		MinLength:   rp.MinLength,
@@ -224,6 +237,10 @@ func newProperty(rp Property) property {
 	if rp.IsArray() && !rp.IsBidimensiArray() {
 		p.Type = "array"
 		p.Items = newArrayItem(rp.ArrayType())
+	}
+
+	if !p.Required {
+		p.Type = []string{fmt.Sprint(p.Type), "null"}
 	}
 	return p
 }

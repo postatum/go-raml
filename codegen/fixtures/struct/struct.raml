@@ -126,11 +126,56 @@ types:
         type: string
         minLength: 8
         maxLength: 40
+  WithDateTime:
+    properties:
+      name:
+        type: string
+      birth:
+        type: datetime
+  Tree:
+    properties:
+      name: string
+      right: Tree
+  
+  leaf:
+    description:  recursive type with small character
+    properties:
+      right: leaf
+
+  AliasBuiltin:
+    description: alias of builtin type
+    type: string
+  Alias:
+    description: alias of another type
+    type: animal
+
+  Animal#2.0:
+    description: type with special characters
+    type: animal
+
+  file:
+    description: types with same name as RAML scalar type
+    properties:
+      name: string
+  
+  dir:
+    description: types which have properties with RAML scalar type as it's name
+    properties:
+      files: file[]
+      animals:
+        type: animal[]
+        required: false
+      animal:
+        type: animal
+        required: false
+
+
 /users:
   post:
     description: create a user
     body:
       application/json:
+        type: object
         properties:
           age:
             type: integer
@@ -171,3 +216,4 @@ types:
               properties:
                 age: integer
                 ID:
+

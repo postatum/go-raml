@@ -7,10 +7,11 @@ import (
 	"testing"
 
 	"github.com/Jumpscale/go-raml/raml"
+	"github.com/Jumpscale/go-raml/utils"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
-func TestGeneratePythonClass(t *testing.T) {
+func TestClass(t *testing.T) {
 	Convey("generate python class from raml", t, func() {
 		apiDef := new(raml.APIDefinition)
 		targetDir, err := ioutil.TempDir("", "")
@@ -22,7 +23,7 @@ func TestGeneratePythonClass(t *testing.T) {
 
 			globAPIDef = apiDef
 
-			_, err = generateAllClasses(apiDef, targetDir)
+			_, err = GenerateAllClasses(apiDef, targetDir, false)
 			So(err, ShouldBeNil)
 
 			rootFixture := "./fixtures/class/"
@@ -38,15 +39,20 @@ func TestGeneratePythonClass(t *testing.T) {
 				"EnumString.py",
 				"petshop.py",
 				"Catanimal.py",
-				"UsersByIdGetReqBody.py",
+				"UsersByIdGetRespBody.py",
 				"UsersPostReqBody.py",
+				"WithDateTime.py",
+				"Tree.py",
+				"Alias.py",
+				"AliasBuiltin.py",
+				"Animal_2_0.py",
 			}
 
 			for _, f := range files {
-				s, err := testLoadFile(filepath.Join(targetDir, f))
+				s, err := utils.TestLoadFile(filepath.Join(targetDir, f))
 				So(err, ShouldBeNil)
 
-				tmpl, err := testLoadFile(filepath.Join(rootFixture, f))
+				tmpl, err := utils.TestLoadFile(filepath.Join(rootFixture, f))
 				So(err, ShouldBeNil)
 
 				So(s, ShouldEqual, tmpl)

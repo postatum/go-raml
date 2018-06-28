@@ -18,7 +18,7 @@ type goSecurity struct {
 // it implemented as struct based middleware
 func (gs *goSecurity) generate(dir string) error {
 	fileName := path.Join(dir, "oauth2_"+gs.Name+"_middleware.go")
-	return commons.GenerateFile(gs, "./templates/oauth2_middleware.tmpl", "oauth2_middleware", fileName, false)
+	return commons.GenerateFile(gs, "./templates/golang/oauth2_middleware.tmpl", "oauth2_middleware", fileName, true)
 }
 
 func generateSecurity(schemes map[string]raml.SecurityScheme, dir, packageName string) error {
@@ -30,7 +30,7 @@ func generateSecurity(schemes map[string]raml.SecurityScheme, dir, packageName s
 			continue
 		}
 
-		sd := security.New(&ss, k, packageName)
+		sd := security.New(ss, k, packageName)
 
 		gss := goSecurity{Security: &sd}
 		err = gss.generate(dir)

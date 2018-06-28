@@ -1,24 +1,30 @@
 package python
 
 import (
-	"fmt"
 	"path/filepath"
-	"sort"
 	"strings"
 
+	"github.com/Jumpscale/go-raml/codegen/capnp"
 	"github.com/Jumpscale/go-raml/codegen/commons"
 	"github.com/Jumpscale/go-raml/codegen/types"
 	"github.com/Jumpscale/go-raml/raml"
+	"github.com/pinzolo/casee"
 )
 
 // class defines a python class
 type class struct {
-	T                 raml.Type
-	Name              string
-	Description       []string
-	Fields            map[string]field
-	Enum              *enum
-	CreateParamString string
+	T           raml.Type
+	name        string
+	Description []string
+	Fields      map[string]field
+	Enum        *enum
+	Capnp       bool
+	AliasOf     string
+	imports     map[string]struct{}
+}
+
+func (pc class) Name() string {
+	return commons.NormalizeIdentifier(pc.name)
 }
 
 type objectProperty struct {
@@ -29,13 +35,22 @@ type objectProperty struct {
 }
 
 // create a python class representations
-func newClass(T raml.Type, name string, description string, properties map[string]interface{}) class {
+func newClass(apiDef *raml.APIDefinition, T raml.Type, name string, description string, properties map[string]interface{}, capnp bool) class {
 	pc := class{
-		Name:        name,
+		name:        name,
 		Description: commons.ParseDescription(description),
 		Fields:      map[string]field{},
 		T:           T,
+		Capnp:       capnp,
+		imports:     make(map[string]struct{}),
 	}
+
+	if pc.T.IsAlias() {
+		return pc
+	}
+
+	// initialize the fields
+
 	types := globAPIDef.Types
 
 	typeHierarchy := getTypeHierarchy(name, T, types)
@@ -53,7 +68,7 @@ func newClass(T raml.Type, name string, description string, properties map[strin
 
 	for propName, propInterface := range mergedProps {
 		op := objectProperties(propName, propInterface)
-		field, err := newField(name, T, propName, propInterface, types, op, typeHierarchy)
+		field, err := newField(name, apiDef, T, propName, propInterface, types, op, typeHierarchy)
 		if err != nil {
 			continue
 		}
@@ -61,22 +76,13 @@ func newClass(T raml.Type, name string, description string, properties map[strin
 		pc.Fields[field.Name] = field
 	}
 
-	// build the CreateParamString, used as part of the create() staticmethod
-	// which is a convenience initializer for the class
-	requiredFields := make([]string, 0)
-	optionalFields := make([]string, 0)
-	for fieldName, fieldVal := range pc.Fields {
-		if fieldVal.Required {
-			requiredFields = append(requiredFields, fieldName)
-		} else {
-			optionalFields = append(optionalFields, fmt.Sprintf("%s=None", fieldName))
-		}
-	}
-	// sort them so we have some stability in param order (important for requiredFields)
-	sort.Strings(requiredFields)
-	sort.Strings(optionalFields)
-	pc.CreateParamString = strings.Join(append(requiredFields, optionalFields...), ", ")
+	return pc
+}
 
+func newClassFromType(apiDef *raml.APIDefinition, T raml.Type, name string, capnp bool) class {
+	pc := newClass(apiDef, T, name, T.Description, T.Properties, capnp)
+	pc.T = T
+	pc.handleAdvancedType()
 	return pc
 }
 
@@ -95,7 +101,7 @@ func objectProperties(name string, p interface{}) []objectProperty {
 						objprop := objectProperty{
 							name:     rProp.Name,
 							required: rProp.Required,
-							datatype: rProp.Type,
+							datatype: rProp.TypeString(),
 						}
 						if rProp.Type == "object" {
 							objprop.childProperties = append(objprop.childProperties, objectProperties(propName.(string), childProp)...)
@@ -110,6 +116,7 @@ func objectProperties(name string, p interface{}) []objectProperty {
 	return props
 }
 
+// ChildProperties returns child properties of a property
 func ChildProperties(Properties map[string]interface{}) []raml.Property {
 	props := make([]raml.Property, 0)
 
@@ -152,15 +159,15 @@ func getTypeProperties(typelist []raml.Type) map[string]raml.Property {
 	return properties
 }
 
-func newClassFromType(T raml.Type, name string) class {
-	pc := newClass(T, name, T.Description, T.Properties)
-	pc.T = T
-	pc.handleAdvancedType()
-	return pc
-}
-
 // generate a python class file
-func (pc *class) generate(dir string) ([]string, error) {
+func (pc *class) generate(dir, template, name string) ([]string, error) {
+	fileName := filepath.Join(dir, pc.Name()+".py")
+
+	if pc.AliasOf != "" {
+		return []string{pc.Name()}, commons.GenerateFile(pc, "./templates/python/class_alias.tmpl",
+			"class_alias", fileName, true)
+	}
+
 	// generate enums
 	typeNames := make([]string, 0)
 	for _, f := range pc.Fields {
@@ -177,44 +184,69 @@ func (pc *class) generate(dir string) ([]string, error) {
 		return typeNames, pc.Enum.generate(dir)
 	}
 
-	fileName := filepath.Join(dir, pc.Name+".py")
-	typeNames = append(typeNames, pc.Name)
-	return typeNames, commons.GenerateFile(pc, "./templates/class_python.tmpl", "class_python", fileName, false)
+	typeNames = append(typeNames, pc.Name())
+	return typeNames, commons.GenerateFile(pc, template, name, fileName, true)
 }
 
 func (pc *class) handleAdvancedType() {
 	if pc.T.Type == nil {
 		pc.T.Type = "object"
 	}
-	if pc.T.IsEnum() {
+	switch {
+	case pc.T.IsEnum():
 		pc.Enum = newEnumFromClass(pc)
+	case pc.T.IsAlias():
+		pc.createTypeAlias()
 	}
+}
+
+func (pc *class) createTypeAlias() {
+	typeStr := pc.T.TypeString()
+
+	pt := toPythonType(typeStr)
+	if pt != nil { // from builtin type
+		pc.AliasOf = pt.name
+		if pt.importName != "" {
+			pc.addImport(pt.importModule, pt.importName)
+		}
+		return
+	}
+
+	// from another type
+	pc.AliasOf = typeStr
+	pc.addImport(".", typeStr)
 }
 
 // return list of import statements
-func (pc class) Imports() []string {
-	// var imports []string
-	imports := make(map[string]bool)
-
+func (pc *class) Imports() []string {
 	for _, field := range pc.Fields {
 		for _, imp := range field.imports {
-			importString := "from " + imp.Module + " import " + imp.Name
-			imports[importString] = true
+			// do not import ourself
+			if imp.Name == pc.Name() {
+				continue
+			}
+			pc.addImport(imp.Module, imp.Name)
 		}
 	}
-	var importStrings []string
-	for key := range imports {
-		importStrings = append(importStrings, key)
-	}
-	sort.Strings(importStrings)
-	return importStrings
+
+	return commons.MapToSortedStrings(pc.imports)
 }
 
-// generate all python classes from an RAML document
-func generateAllClasses(apiDef *raml.APIDefinition, dir string) ([]string, error) {
+func (pc *class) addImport(mod, name string) {
+	importString := "from " + mod + " import " + name
+	pc.imports[importString] = struct{}{}
+}
+func (pc class) CapnpName() string {
+	return casee.ToPascalCase(pc.Name())
+}
+
+// generate all python classes from a RAML document
+func GenerateAllClasses(apiDef *raml.APIDefinition, dir string, capnp bool) ([]string, error) {
 	// array of tip that need to be generated in the end of this
 	// process. because it needs other object to be registered first
 	delayedMI := []string{} // delayed multiple inheritance
+	template := "./templates/python/class_python.tmpl"
+	templateName := "class_python"
 
 	names := []string{}
 	for name, t := range types.AllTypes(apiDef, "") {
@@ -229,19 +261,15 @@ func generateAllClasses(apiDef *raml.APIDefinition, dir string) ([]string, error
 				delayedMI = append(delayedMI, tip)
 			}
 		case types.TypeInBody:
-			methodName := setServerMethodName(tip.Endpoint.Method.DisplayName, tip.Endpoint.Verb, tip.Endpoint.Resource)
-			pc := newClass(raml.Type{Type: "object"}, setReqBodyName(methodName), "", tip.Properties)
-			propNames := []string{}
-			for k, _ := range tip.Properties {
-				propNames = append(propNames, k)
-			}
-			results, errGen = pc.generate(dir)
+			newTipName := types.PascalCaseTypeName(tip)
+			pc := newClass(apiDef, raml.Type{Type: "object"}, newTipName, "", tip.Properties, capnp)
+			results, errGen = pc.generate(dir, template, templateName)
 		case raml.Type:
 			if name == "UUID" {
 				continue
 			}
-			pc := newClassFromType(tip, name)
-			results, errGen = pc.generate(dir)
+			pc := newClassFromType(apiDef, tip, name, capnp)
+			results, errGen = pc.generate(dir, template, templateName)
 		}
 
 		if errGen != nil {
@@ -255,8 +283,8 @@ func generateAllClasses(apiDef *raml.APIDefinition, dir string) ([]string, error
 			Type: tip,
 		}
 		if parents, isMult := rt.MultipleInheritance(); isMult {
-			pc := newClassFromType(rt, strings.Join(parents, ""))
-			results, err := pc.generate(dir)
+			pc := newClassFromType(apiDef, rt, strings.Join(parents, ""), capnp)
+			results, err := pc.generate(dir, template, templateName)
 			if err != nil {
 				return names, err
 			}
@@ -266,4 +294,18 @@ func generateAllClasses(apiDef *raml.APIDefinition, dir string) ([]string, error
 	}
 	return names, nil
 
+}
+
+// GeneratePythonCapnpClasses generates python classes from a raml definition along with function to load binaries from/to capnp
+// and generates the needed capnp schemas
+func GeneratePythonCapnpClasses(apiDef *raml.APIDefinition, dir string) error {
+	// TODO : get rid of this global variables
+	globAPIDef = apiDef
+
+	if err := capnp.GenerateCapnp(apiDef, dir, "", ""); err != nil {
+		return err
+	}
+
+	_, err := GenerateAllClasses(apiDef, dir, true)
+	return err
 }

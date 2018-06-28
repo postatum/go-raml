@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	structTemplateLocation         = "./templates/struct.tmpl"
-	inputValidatorTemplateLocation = "./templates/struct_input_validator.tmpl"
+	structTemplateLocation         = "./templates/golang/struct.tmpl"
+	inputValidatorTemplateLocation = "./templates/golang/struct_input_validator.tmpl"
 	inputValidatorFileResult       = "struct_input_validator.go"
 )
 
@@ -33,16 +33,16 @@ func (sd structDef) NotBareInterface() bool {
 	return !strings.HasSuffix(sd.OneLineDef, " interface{}")
 }
 
-// create new struct def
-func newStructDef(name, packageName, description string, properties map[string]interface{}) structDef {
+// create new struct definition
+func newStructDef(apiDef *raml.APIDefinition, name, packageName, description string, properties map[string]interface{}) structDef {
 	// generate struct's fields from type properties
 	fields := make(map[string]fieldDef)
 	for k, v := range properties {
 		prop := raml.ToProperty(k, v)
-		fields[prop.Name] = newFieldDef(name, prop, packageName)
+		fields[prop.Name] = newFieldDef(apiDef, name, prop, packageName)
 	}
 	return structDef{
-		Name:        name,
+		Name:        strings.Title(commons.NormalizeIdentifier(name)),
 		PackageName: packageName,
 		Fields:      fields,
 		Description: commons.ParseDescription(description),
@@ -50,12 +50,12 @@ func newStructDef(name, packageName, description string, properties map[string]i
 }
 
 // create struct definition from RAML Type node
-func newStructDefFromType(t raml.Type, sName, packageName string) structDef {
-	sd := newStructDef(sName, packageName, t.Description, t.Properties)
+func newStructDefFromType(apiDef *raml.APIDefinition, t raml.Type, sName, packageName string) structDef {
+	sd := newStructDef(apiDef, sName, packageName, t.Description, t.Properties)
 	sd.T = t
 
 	// handle advanced type on raml1.0
-	sd.handleAdvancedType()
+	sd.handleAdvancedType(apiDef)
 
 	return sd
 }
@@ -74,21 +74,23 @@ func (sd structDef) generate(dir string) error {
 		return sd.Enum.generate(dir)
 	}
 	fileName := filepath.Join(dir, sd.Name+".go")
-	return commons.GenerateFile(sd, structTemplateLocation, "struct_template", fileName, false)
+	return commons.GenerateFile(sd, structTemplateLocation, "struct_template", fileName, true)
 }
 
-func generateStructs(types map[string]raml.Type, dir, pkgName string) error {
+func generateStructs(types map[string]raml.Type, dir string) error {
 	apiDef := raml.APIDefinition{
 		Types: types,
 	}
-	return generateAllStructs(&apiDef, dir, pkgName)
+	return generateAllStructs(&apiDef, dir)
 }
 
-func generateAllStructs(apiDef *raml.APIDefinition, dir, pkgName string) error {
+func generateAllStructs(apiDef *raml.APIDefinition, dir string) error {
+	pkgName := typePackage
+	dir = filepath.Join(dir, typeDir)
 	for _, t := range types.AllTypes(apiDef, pkgName) {
 		switch tip := t.Type.(type) {
 		case string:
-			createGenerateStruct(tip, dir, pkgName)
+			createGenerateStruct(apiDef, tip, dir, pkgName)
 		case types.TypeInBody:
 			// TODO:
 			// need to change this Req/Resp body name
@@ -101,12 +103,12 @@ func generateAllStructs(apiDef *raml.APIDefinition, dir, pkgName string) error {
 			} else {
 				name += "RespBody"
 			}
-			sd := newStructDef(name, pkgName, tip.Description, tip.Properties)
+			sd := newStructDef(apiDef, name, pkgName, tip.Description, tip.Properties)
 			if err := sd.generate(dir); err != nil {
 				return err
 			}
 		case raml.Type:
-			sd := newStructDefFromType(tip, t.Name, pkgName)
+			sd := newStructDefFromType(apiDef, tip, t.Name, pkgName)
 			if err := sd.generate(dir); err != nil {
 				return err
 			}
@@ -115,27 +117,27 @@ func generateAllStructs(apiDef *raml.APIDefinition, dir, pkgName string) error {
 	return nil
 }
 
-// ImportPaths returns all packages that
+// Imports returns all packages that
 // need to be imported by this struct
-func (sd structDef) ImportPaths() map[string]struct{} {
+func (sd structDef) Imports() []string {
 	ip := map[string]struct{}{}
 
 	if sd.needFmt() {
-		ip["fmt"] = struct{}{}
+		ip[`"fmt"`] = struct{}{}
 	}
 	if sd.OneLineDef == "" {
-		ip["gopkg.in/validator.v2"] = struct{}{}
+		ip[`"gopkg.in/validator.v2"`] = struct{}{}
 	}
 
 	// libraries
 	for _, fd := range sd.Fields {
-		if fd.Type == "json.RawMessage" {
-			ip["encoding/json"] = struct{}{}
-		} else if lib := libImportPath(globRootImportPath, fd.Type, globLibRootURLs); lib != "" {
+		if fd.fieldType == "json.RawMessage" {
+			ip[`"encoding/json"`] = struct{}{}
+		} else if lib := libImportPath(globRootImportPath, fd.fieldType, globLibRootURLs); lib != "" {
 			ip[lib] = struct{}{}
 		}
 	}
-	return ip
+	return commons.MapToSortedStrings(ip)
 }
 
 // handle advance type type into structField
@@ -146,37 +148,41 @@ func (sd structDef) ImportPaths() map[string]struct{} {
 //       name:
 //         type: string
 // the additional fieldDef would be Animal composition
-func (sd *structDef) handleAdvancedType() {
+func (sd *structDef) handleAdvancedType(apiDef *raml.APIDefinition) {
 	if sd.T.Type == nil {
 		sd.T.Type = "object"
 	}
 
-	strType := sd.T.TypeString()
 	parents, isMultipleInherit := sd.T.MultipleInheritance()
 	parent, isSingleInherit := sd.T.SingleInheritance()
 
 	switch {
-	case isMultipleInherit: //multiple inheritance
-		sd.addMultipleInheritance(parents)
+	case isMultipleInherit:
+		sd.addMultipleInheritance(apiDef, parents)
 	case sd.T.IsUnion():
 		sd.buildUnion()
-	case sd.T.IsArray(): // arary type
+	case sd.T.IsArray():
 		sd.buildArray()
-	case strings.ToLower(strType) == "object": // plain type
+	case strings.ToLower(sd.T.TypeString()) == "object": // plain type
 		return
-	case sd.T.IsEnum(): // enum
+	case sd.T.IsEnum():
 		sd.buildEnum()
-	case strType != "" && len(sd.T.Properties) == 0: // type alias
-		sd.buildTypeAlias()
-	case isSingleInherit: // single inheritance
-		sd.addSingleInheritance(parent)
+	case sd.T.IsAlias():
+		sd.buildTypeAlias(apiDef)
+	case isSingleInherit:
+		sd.addSingleInheritance(apiDef, parent)
 	}
 }
 
 // add single inheritance
 // inheritance is implemented as composition
 // spec : http://docs.raml.org/specs/1.0/#raml-10-spec-inheritance-and-specialization
-func (sd *structDef) addSingleInheritance(strType string) {
+func (sd *structDef) addSingleInheritance(apiDef *raml.APIDefinition, strType string) {
+	// check if parent is user defined type
+	if _, ok := apiDef.Types[strType]; ok {
+		strType = strings.Title(strType)
+	}
+
 	fd := fieldDef{
 		Name:          strType,
 		IsComposition: true,
@@ -194,9 +200,15 @@ func (sd *structDef) addSingleInheritance(strType string) {
 //			type: string
 // The additional fielddef would be a composition of Animal & Cat
 // http://docs.raml.org/specs/1.0/#raml-10-spec-multiple-inheritance
-func (sd *structDef) addMultipleInheritance(parents []string) {
+func (sd *structDef) addMultipleInheritance(apiDef *raml.APIDefinition, parents []string) {
 	for _, s := range parents {
 		fieldType := strings.TrimSpace(s)
+
+		// check if parent is user defined type
+		if _, ok := apiDef.Types[fieldType]; ok {
+			fieldType = strings.Title(fieldType)
+		}
+
 		fd := fieldDef{
 			Name:          fieldType,
 			IsComposition: true,
@@ -224,8 +236,14 @@ func (sd *structDef) buildArray() {
 func (sd *structDef) buildUnion() {
 }
 
-func (sd *structDef) buildTypeAlias() {
-	sd.buildOneLine(convertToGoType(sd.T.Type.(string), ""))
+func (sd *structDef) buildTypeAlias(apiDef *raml.APIDefinition) {
+	strType := sd.T.TypeString()
+	// check if parent is user defined type
+	if _, ok := apiDef.Types[strType]; ok {
+		strType = strings.Title(strType)
+	}
+
+	sd.buildOneLine(convertToGoType(strType, ""))
 }
 
 func (sd *structDef) buildOneLine(tipe string) {
@@ -277,13 +295,13 @@ func unionNewName(tip string) string {
 // return:
 // - newType Name if we try to generate it
 // - nil if no error happened during generation
-func createGenerateStruct(tip, dir, pkgName string) (string, error) {
+func createGenerateStruct(apiDef *raml.APIDefinition, tip, dir, pkgName string) (string, error) {
 	rt := raml.Type{
 		Type: tip,
 	}
 	if parents, isMultiple := rt.MultipleInheritance(); isMultiple {
-		sd := newStructDef(multipleInheritanceNewName(parents), pkgName, "", map[string]interface{}{})
-		sd.addMultipleInheritance(parents)
+		sd := newStructDef(apiDef, multipleInheritanceNewName(parents), pkgName, "", map[string]interface{}{})
+		sd.addMultipleInheritance(apiDef, parents)
 		return sd.Name, sd.generate(dir)
 	}
 
@@ -291,7 +309,7 @@ func createGenerateStruct(tip, dir, pkgName string) (string, error) {
 		t := raml.Type{
 			Type: tip,
 		}
-		sd := newStructDef(unionNewName(tip), pkgName, "", map[string]interface{}{})
+		sd := newStructDef(apiDef, unionNewName(tip), pkgName, "", map[string]interface{}{})
 		sd.T = t
 		sd.buildUnion()
 		sd.generate(dir)

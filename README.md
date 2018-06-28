@@ -28,6 +28,11 @@ Table of Contents
 * [RAML to Code Translation](#raml-to-code-translation)
 * [Tutorial](#tutorial)
 
+## planning
+
+- [kanban for 9.3.0 (includes jumpscale as well)](https://waffle.io/Jumpscale/home?milestone=9.3.0)
+- [kanban for 9.3.1 (includes jumpscale as well)](https://waffle.io/Jumpscale/home?milestone=9.3.1)
+- [kanban for 9.4.0 (includes jumpscale as well)](https://waffle.io/Jumpscale/home?milestone=9.4.0)
 
 ## What is go-raml
 
@@ -56,16 +61,16 @@ Currently there are still some [limitations](docs/limitations.md) on the RAML 1.
 
 ## Install
 
-make sure you have at least go 1.6 installed !
+make sure you have at least go 1.8 installed !
 
 `go get -u github.com/Jumpscale/go-raml`
 
 
 ### Build in development
 
-Install `godep` as package manager, we need it for vendoring tool
+Install `dep` as package manager, we need it for vendoring tool
 
-`$go get -u github.com/tools/godep`
+`$go get -u github.com/golang/dep/cmd/dep
 
 Install go-bindata, we need it to compile all resource files to .go file
 
@@ -81,7 +86,7 @@ sh build_apidocs.sh
 Build go-raml and all resource files
 ```
 cd $GOPATH/src/github.com/Jumpscale/go-raml
-sh build.sh
+make install
 ```
 
 ## Code generation
@@ -141,7 +146,6 @@ Executes this command to generates Sanic server
    --no-main                                    Do not generate a main.go file
    --no-apidocs                                 Do not generate API Docs in /apidocs/ endpoint
    --import-path "examples.com/ramlcode"        import path of the generated code
-   --api-file-per-method                        Generate one API implementation file per method (only for Go)
    --lib-root-urls								Array of libraries root URLs 
 ```
 
@@ -156,6 +160,20 @@ A go 1.5.x compatible client is generated in result_directory directory.
 `go-raml client --language python --dir ./result_directory --ramlfile api.raml --kind aiohttp`
 
 A python 3.5 compatible client is generated in result_directory directory.
+
+### Code Generator Options
+
+```
+OPTIONS:
+   --language, -l "go"		Language to construct a client for
+   --dir "."			target directory
+   --ramlfile "."		Source raml file
+   --package "client"		package name
+   --import-path 		golang import path of the generated code
+   --kind "requests"		Kind of python client to generate (requests,aiohttp)
+   --lib-root-urls 		Array of libraries root URLs
+   --python-unmarshall-response	set to true for python client to unmarshall the response into python class
+```
 
 ## Generating Docs
 `go-raml docs [--format markdown] --ramlfile api.raml --output api.md`
@@ -213,6 +231,7 @@ Generated code details:
 - one bluperint/module for each root RAML resource
 - helper file
 - requirements.txt which contains list of packages needed to run the app.
+- all files are overwritten when the server is regenerated even if they exist except for the handlers files under handlers/
 
 Install needed packages
 ```
@@ -242,6 +261,7 @@ We provide two kind of clients:
 - async client using `aiohttp` library, this client will give more performance
 
 It has `set_auth_header` method to set `Authorization` header value on each request.
+All files are overwritten when the client is regenerated.
 
 ## Specification file
 
@@ -298,6 +318,12 @@ Short descriptions about how the generator generates the code from raml file are
 ## Tutorial
  
  Tutorial for Go, Python, and Nim is available at [docs/tutorial directory](./docs/tutorial)
+ 
+ Check all the available go commands [here](./docs/tutorial/go/README.md)
+ 
+ Check all the available python commands [here](./docs/tutorial/python/README.md)
+ 
+ Check all the available nim commands [here](./docs/tutorial/nim/README.md)
 
 ## CREDITS
 

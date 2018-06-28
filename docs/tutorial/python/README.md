@@ -14,6 +14,14 @@ go-raml server -l python --ramlfile ../api.raml  --dir flask
 
 You can find all Flask files in `flask` directory.
 
+Generate a Gevent Flask server code by using this command
+
+```
+go-raml server -l python --ramlfile ../api.raml  --dir gevent --kind gevent-flask
+```
+
+You can find all Flask files in `gevent` directory.
+
 Generate Sanic code by using this command
 
 ```
@@ -55,14 +63,51 @@ Then you can find client code in `requests_client` directory.
 You will need to install `requests` library to use the client.
 
 
+Generate `gevent requests` based client code by using this command
+
+```
+go-raml client --ramlfile ../api.raml --dir gevent_client/goramldir -l python --kind gevent-requests
+```
+Then you can find client code in `gevent_client` directory.
+You will need to install `requests` and `gevent` library to use the client.
+
+
 You can also generate `aiohttp` asyncio based client code by using this command
 
 ```
-go-raml client --ramlfile ../api.raml --dir aiohttp_client/goramldir -l python -kind aiohttp
+go-raml client --ramlfile ../api.raml --dir aiohttp_client/goramldir -l python --kind aiohttp
 ```
 
 Then you can find client code in `aiohttp_client` directory.
 You will need to install `aiohttp` and `aiodns` library to use the client.
+
+### Unmarshall response
+
+Client generator has an option to generate client code that unmarshall the response
+body into the generated client class.
+It is currently disabled by default and could be enabled by setting this option `--python-unmarshall-response` in the `go-raml client` command line option.
+
+```
+go-raml client --ramlfile ../api.raml --dir requests_client/goramldir -l python --python-unmarshall-response
+```
+
+
+In case of success unmarshal, the generated client returns two values:
+- data : python class constructed by unmarshalling the response body
+- response: python-requests's response object
+
+otherwise it returns exception.
+
+Usage example:
+
+```python
+try:
+    data, resp = client.network.getNetwork("my_net_id")
+    print(resp)
+except unmarshall_error.UnmarshallError as ue:
+    print("response:", ue.response.text)
+    print("msg: ", ue.message)
+```
 
 
 **simple client main code**

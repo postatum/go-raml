@@ -12,7 +12,13 @@ Generated client library only use `http` package from stdlib.
 
 ## Type
 
-RAML Object usually become Go struct.
+RAML Object become Go struct, generated in `types` directory.
+
+Because all types are generated into `types` package, its need to be exported
+in order to be usable from other packages.
+In other word, first letter of the type is going to be converted to uppercase.
+It implies that it is invalid to have two types which only differ in the case(upper or lower)
+of the first character.
 
 Some rules about type's properties naming:
 
@@ -43,22 +49,23 @@ Enum type and file name is started by `Enum`
 
 ## Input Validation
 
+Input validation is done using [go-validator](https://github.com/go-validator/validator).
 
-    Validation              |    Go 
---------------------------- | ------
- minLength                  |   v   
- maxLength                  |   v   
- pattern                    |   v   
- minimum                    |   v   
- maximum                    |   v  
- format                     |   x  
- multipleOf                 |   v 
- array field minItems       |   v 
- array field maxItems       |   v
- array field uniqueItems    |   v
- array Type minItems        |   v
- array Type maxItems        |   v 
- array Type uniqueItems     |   v
+|    Validation              |    Go
+|--------------------------- | ------
+| minLength                  |   v
+| maxLength                  |   v
+| pattern                    |   v
+| minimum                    |   v
+| maximum                    |   v
+| format                     |   x
+| multipleOf                 |   v
+| array field minItems       |   v
+| array field maxItems       |   v
+| array field uniqueItems    |   v
+| array Type minItems        |   v
+| array Type maxItems        |   v
+| array Type uniqueItems     |   v
 
 
 ## Bodies
@@ -79,12 +86,22 @@ Resources in the server are mapped to:
     - interface name = [resource]Interface
 
 - API implementation that implements the interface
-    - file name = [resource]_api.go
+    - main API file = handlers/[resource]/[resource]_api.go
+    - per method API files also generated in the same directory as the main API file
     - only generated when the file is not present
     - struct name = [resource]API
 
 - routes for all necessary routes:
     - func name = [Resource]InterfaceRoutes
+    - generated in the same file as interface file
+
+#### Catch-All route
+
+`{path:*}` could be used to express Catch-All route.
+For example /path/{path:*} is going to match:
+  - /path/a    -> path = a
+  - /path/a/b  -> path = a/b
+  - /path/a/b/c -> path = a/b/c
 
 ### Client
 
@@ -146,7 +163,7 @@ Includes should work properly
 
 ### Libraries
 
-Libraries should work properly, a library will be generated into a package.
+Library will be generated into a package.
 
 
 ### Overlays and Extensions

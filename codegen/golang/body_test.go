@@ -7,10 +7,11 @@ import (
 	"testing"
 
 	"github.com/Jumpscale/go-raml/raml"
+	"github.com/Jumpscale/go-raml/utils"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
-func TestGenerateStructBodyFromRaml(t *testing.T) {
+func TestGenerateStructFromBody(t *testing.T) {
 	Convey("generate struct body from raml", t, func() {
 		apiDef := new(raml.APIDefinition)
 
@@ -21,24 +22,40 @@ func TestGenerateStructBodyFromRaml(t *testing.T) {
 			err = raml.ParseFile("../fixtures/struct/struct.raml", apiDef)
 			So(err, ShouldBeNil)
 
-			s := NewServer(apiDef, "main", "", "examples.com", false, false, targetDir, nil)
+			s := NewServer(apiDef, "main", "", "examples.com", false, targetDir, nil)
 			err := s.Generate()
 			So(err, ShouldBeNil)
 
-			rootFixture := "./fixtures/struct"
-			files := []string{
+			rootFixture := "./fixtures/struct/body"
+			typeFiles := []string{
 				"UsersIdGetRespBody",
 				"UsersPostReqBody",
 				"Catanimal",
-				"users_api",
 				"UnionCatanimal",
 			}
 
-			for _, f := range files {
-				s, err := testLoadFile(filepath.Join(targetDir, f+".go"))
+			for _, f := range typeFiles {
+				s, err := utils.TestLoadFile(filepath.Join(targetDir, typeDir, f+".go"))
 				So(err, ShouldBeNil)
 
-				tmpl, err := testLoadFile(filepath.Join(rootFixture, f+".txt"))
+				tmpl, err := utils.TestLoadFile(filepath.Join(rootFixture, f+".txt"))
+				So(err, ShouldBeNil)
+
+				So(s, ShouldEqual, tmpl)
+			}
+
+			apiFiles := []string{
+				"users_api",
+				"users_api_IdGet",
+				"users_api_IdPut",
+				"users_api_Post",
+			}
+
+			for _, f := range apiFiles {
+				s, err := utils.TestLoadFile(filepath.Join(targetDir, serverAPIDir, "users", f+".go"))
+				So(err, ShouldBeNil)
+
+				tmpl, err := utils.TestLoadFile(filepath.Join(rootFixture, f+".txt"))
 				So(err, ShouldBeNil)
 
 				So(s, ShouldEqual, tmpl)
@@ -49,20 +66,22 @@ func TestGenerateStructBodyFromRaml(t *testing.T) {
 			err = raml.ParseFile("../fixtures/struct/validation.raml", apiDef)
 			So(err, ShouldBeNil)
 
-			s := NewServer(apiDef, "main", "", "examples.com", false, false, targetDir, nil)
+			s := NewServer(apiDef, "main", "", "examples.com", false, targetDir, nil)
 			err := s.Generate()
 			So(err, ShouldBeNil)
 
 			rootFixture := "./fixtures/struct/validation"
 			files := []string{
 				"builtin_api",
+				"builtin_api_Morecomplextype",
+				"builtin_api_Scalartype",
 			}
 
 			for _, f := range files {
-				s, err := testLoadFile(filepath.Join(targetDir, f+".go"))
+				s, err := utils.TestLoadFile(filepath.Join(targetDir, serverAPIDir, "builtin", f+".go"))
 				So(err, ShouldBeNil)
 
-				tmpl, err := testLoadFile(filepath.Join(rootFixture, f+".txt"))
+				tmpl, err := utils.TestLoadFile(filepath.Join(rootFixture, f+".txt"))
 				So(err, ShouldBeNil)
 
 				So(s, ShouldEqual, tmpl)

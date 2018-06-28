@@ -25,40 +25,46 @@ var (
 
 // Server represents a Go server
 type Server struct {
-	apiDef           *raml.APIDefinition
-	ResourcesDef     []resource.ResourceInterface
-	PackageName      string // Name of the package this server resides in
-	APIDocsDir       string // apidocs directory. apidocs won't be generated if it is empty
-	withMain         bool   // true if we need to generate main file
-	RootImportPath   string
-	APIFilePerMethod bool     // true if we want to generate one API file per API method
-	TargetDir        string   // root directory of the generated code
-	libsRootURLs     []string // root URLs of the libraries
+	apiDef         *raml.APIDefinition
+	ResourcesDef   []*goResource
+	PackageName    string // Name of the package this server resides in
+	apiDocsDir     string // apidocs directory. apidocs won't be generated if it is empty
+	withMain       bool   // true if we need to generate main file
+	RootImportPath string
+	TargetDir      string   // root directory of the generated code
+	libsRootURLs   []string // root URLs of the libraries
 }
 
 // NewServer creates a new Golang server
 func NewServer(apiDef *raml.APIDefinition, packageName, apiDocsDir, rootImportPath string,
-	withMain, apiFilePerMethod bool, targetDir string, libsRootURLs []string) Server {
+	withMain bool, targetDir string, libsRootURLs []string) *Server {
 	// global variables
 	rootImportPath = setRootImportPath(rootImportPath, targetDir)
 	globAPIDef = apiDef
 	globRootImportPath = rootImportPath
 	globLibRootURLs = libsRootURLs
 
-	return Server{
-		apiDef:           apiDef,
-		PackageName:      packageName,
-		APIDocsDir:       apiDocsDir,
-		withMain:         withMain,
-		RootImportPath:   rootImportPath,
-		APIFilePerMethod: apiFilePerMethod,
-		TargetDir:        targetDir,
-		libsRootURLs:     libsRootURLs,
+	return &Server{
+		apiDef:         apiDef,
+		PackageName:    packageName,
+		apiDocsDir:     apiDocsDir,
+		withMain:       withMain,
+		RootImportPath: rootImportPath,
+		TargetDir:      targetDir,
+		libsRootURLs:   libsRootURLs,
 	}
 }
 
-// Generate generates all Go server files
-func (gs Server) Generate() error {
+// APIDocsDir implements codegen.Server.APIDocsDir interface
+func (gs *Server) APIDocsDir() string {
+	return gs.apiDocsDir
+}
+
+// Generate implements codegen.Server.Generate interface
+func (gs *Server) Generate() error {
+	if err := commons.CheckDuplicatedTitleTypes(gs.apiDef); err != nil {
+		return err
+	}
 	if gs.RootImportPath == "" {
 		return fmt.Errorf("invalid import path = empty. please set --import-path or set target dir under gopath")
 	}
@@ -72,7 +78,7 @@ func (gs Server) Generate() error {
 		return err
 	}
 
-	if err := generateAllStructs(gs.apiDef, gs.TargetDir, gs.PackageName); err != nil {
+	if err := generateAllStructs(gs.apiDef, gs.TargetDir); err != nil {
 		return err
 	}
 
@@ -94,6 +100,11 @@ func (gs Server) Generate() error {
 		return err
 	}
 
+	// routes
+	if err := commons.GenerateFile(gs, "./templates/golang/server_routes.tmpl", "server_routes", filepath.Join(gs.TargetDir, "routes.go"), true); err != nil {
+		return err
+	}
+
 	// generate main
 	if gs.withMain {
 		// HTML front page
@@ -101,7 +112,7 @@ func (gs Server) Generate() error {
 			return err
 		}
 		// main file
-		return commons.GenerateFile(gs, "./templates/server_main_go.tmpl", "server_main_go", filepath.Join(gs.TargetDir, "main.go"), true)
+		return commons.GenerateFile(gs, "./templates/golang/server_main_go.tmpl", "server_main_go", filepath.Join(gs.TargetDir, "main.go"), true)
 	}
 
 	return nil
@@ -110,4 +121,18 @@ func (gs Server) Generate() error {
 // Title returns title of this server
 func (gs Server) Title() string {
 	return gs.apiDef.Title
+}
+
+func (gs Server) RouteImports() []string {
+	imports := make(map[string]struct{})
+
+	baseAPIDir := filepath.Join(gs.RootImportPath, serverAPIDir)
+	for _, rd := range gs.ResourcesDef {
+		imports[baseAPIDir+"/"+rd.PackageName] = struct{}{}
+	}
+	return commons.MapToSortedStrings(imports)
+}
+
+func (gs Server) ShowAPIDocsAndIndex() bool {
+	return !resource.HasCatchAllInRootRoute(gs.apiDef)
 }

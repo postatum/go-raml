@@ -52,7 +52,12 @@ func TestResourceTypeInheritance(t *testing.T) {
 
 			mem := r.Nested["/{id}"]
 			So(mem, ShouldNotBeNil)
-			So(mem.Get.Description, ShouldEqual, "get /corps/{id}")
+			So(mem.Get.Description, ShouldEqual, "get /corps/{id}") // check resourcePath parsing
+
+			// check resourcePathName parsing
+			respCode := HTTPCode("200")
+			So(mem.Get.Responses, ShouldContainKey, respCode)
+			So(mem.Get.Responses[respCode].Bodies.Type, ShouldEqual, "corps")
 		})
 
 		Convey("books - query parameters", func() {
@@ -79,7 +84,11 @@ func TestResourceTypeInheritance(t *testing.T) {
 			So(r.Get, ShouldNotBeNil)
 
 			qps := r.Get.QueryParameters
-			So(qps["numPages"].Description, ShouldEqual, "The number of pages to return, not to exceed 10")
+			numPages := qps["numPages"]
+			So(numPages.Description, ShouldEqual, "The number of pages to return, not to exceed 10")
+			So(numPages.Type, ShouldEqual, "integer")
+			So(*numPages.Minimum, ShouldEqual, 1)
+			So(numPages.Required, ShouldEqual, true)
 
 			So(qps["access_token"].Description, ShouldEqual, "A valid access_token is required")
 

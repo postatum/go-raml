@@ -35,6 +35,7 @@ package raml
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -63,6 +64,8 @@ var (
 		"long":   true,
 		"float":  true,
 		"double": true,
+
+		"object": true,
 	}
 )
 
@@ -131,10 +134,16 @@ func (dc *DefinitionChoice) UnmarshalYAML(unmarshaler func(interface{}) error) e
 	return err
 }
 
+// HasProperties is interface of all objects that
+// contains RAML properties
+type HasProperties interface {
+	GetProperty(string) Property
+}
+
 // Property defines a Type property
 type Property struct {
 	Name        string
-	Type        string      `yaml:"type"`
+	Type        interface{} `yaml:"type"`
 	Required    bool        `yaml:"required"`
 	Enum        interface{} `yaml:"enum"`
 	Description string      `yaml:"description"`
@@ -154,16 +163,22 @@ type Property struct {
 	MinItems    *int
 	MaxItems    *int
 	UniqueItems bool
-	Items       string
+	Items       Items
 
 	// Capnp extension
-	CapnpFieldNumber int
-	CapnpType        string
+	CapnpType string
+
+	_type *Type // pointer to Type of this Property
 }
 
 // ToProperty creates a property from an interface
 // we use `interface{}` as property type to support syntactic sugar & shortcut
+// using it directly is DEPRECATED
 func ToProperty(name string, p interface{}) Property {
+	return toProperty(name, p)
+}
+
+func toProperty(name string, p interface{}) Property {
 	// convert number(int/float) to float
 	toFloat64 := func(number interface{}) float64 {
 		switch v := number.(type) {
@@ -222,11 +237,11 @@ func ToProperty(name string, p interface{}) Property {
 			case "uniqueItems":
 				p.UniqueItems = v.(bool)
 			case "items":
-				p.Items = v.(string)
-			case "capnpFieldNumber":
-				p.CapnpFieldNumber = v.(int)
+				p.Items = newItems(v)
 			case "capnpType":
 				p.CapnpType = v.(string)
+			case "properties":
+				log.Fatalf("Properties field of '%v' should already be deleted. Seems there are unsupported inline type", name)
 			}
 		}
 		return p
@@ -251,10 +266,26 @@ func ToProperty(name string, p interface{}) Property {
 	// if has "?" suffix, remove the "?" and set required=false
 	if strings.HasSuffix(prop.Name, "?") {
 		prop.Required = false
-		prop.Name = prop.Name[:len(prop.Name)-1]
+		prop.Name = strings.TrimSuffix(prop.Name, "?")
 	}
 	return prop
 
+}
+
+// TypeString returns string representation
+// of the property's type
+func (p Property) TypeString() string {
+	switch p.Type.(type) {
+	case string:
+		return p.Type.(string)
+	case Type:
+		if p._type == nil {
+			panic(fmt.Errorf("property '%v' has no parent type", p.Name))
+		}
+		return p._type.Name + p.Name
+	default:
+		return "string"
+	}
 }
 
 // IsEnum returns true if a property is an enum
@@ -265,34 +296,36 @@ func (p Property) IsEnum() bool {
 // IsBidimensiArray returns true if
 // this property is a bidimensional array
 func (p Property) IsBidimensiArray() bool {
-	return strings.HasSuffix(p.Type, "[][]")
+	return strings.HasSuffix(p.TypeString(), "[][]")
 }
 
 // IsArray returns true if it is an array
 func (p Property) IsArray() bool {
-	return p.Type == arrayType || strings.HasSuffix(p.Type, "[]")
+	return p.Type == arrayType || strings.HasSuffix(p.TypeString(), "[]")
 }
 
 // IsUnion returns true if a property is a union
 func (p Property) IsUnion() bool {
-	return strings.Index(p.Type, "|") > 0
+	return strings.Index(p.TypeString(), "|") > 0
 }
 
 // BidimensiArrayType returns type of the bidimensional array
 func (p Property) BidimensiArrayType() string {
-	return strings.TrimSuffix(p.Type, "[][]")
+	return strings.TrimSuffix(p.TypeString(), "[][]")
 }
 
 // ArrayType returns the type of the array
 func (p Property) ArrayType() string {
 	if p.Type == arrayType {
-		return p.Items
+		return p.Items.Type
 	}
-	return strings.TrimSuffix(p.Type, "[]")
+	return strings.TrimSuffix(p.TypeString(), "[]")
 }
 
 // Type defines an RAML data type
 type Type struct {
+	Name string
+
 	// A default value for a type
 	Default interface{} `yaml:"default"`
 
@@ -416,25 +449,27 @@ type Type struct {
 	// ---------- facets for file --------------------------------//
 	// A list of valid content-type strings for the file. The file type */* MUST be a valid value.
 	FileTypes string `yaml:"fileTypes" json:"fileTypes"`
+
+	_apiDef *APIDefinition
+}
+
+// GetProperty returns property with given name
+func (t *Type) GetProperty(name string) Property {
+	propInterface, ok := t.Properties[name]
+	if !ok {
+		panic(fmt.Errorf("property %v not exist", name))
+	}
+
+	prop := toProperty(name, propInterface)
+	prop._type = t
+
+	return prop
 }
 
 // IsBuiltin if a type is an RAML builtin type.
 func (t Type) IsBuiltin() bool {
 	_, ok := scalarTypes[t.TypeString()]
 	return ok
-}
-
-func (t Type) GetBuiltinType() (string, bool) {
-	if t.IsBuiltin() {
-		return t.TypeString(), true
-	}
-	if t.IsArray() {
-		return t.ArrayType(), true
-	}
-	if t.IsBidimensiArray() {
-		return t.BidimensiArrayType(), true
-	}
-	return "", false
 }
 
 // Parents returns parents of this Type.
@@ -538,7 +573,6 @@ func (t Type) IsArray() bool {
 		return false
 	}
 	return t.TypeString() == arrayType || strings.HasSuffix(t.TypeString(), "[]")
-	//return strings.HasSuffix(t.TypeString(), "[]")
 }
 
 // ArrayType returns type of the array
@@ -557,6 +591,9 @@ func (t Type) IsBidimensiArray() bool {
 	}
 	return strings.HasSuffix(t.TypeString(), "[][]")
 }
+
+// BidimensiArrayType returns type
+// of a bidimensional array
 func (t Type) BidimensiArrayType() string {
 	return strings.TrimSuffix(t.TypeString(), "[][]")
 }
@@ -588,12 +625,152 @@ func (t Type) Union() ([]string, bool) {
 	return tips, true
 }
 
+// IsAlias returns true if this Type is
+// alias of another Type
+func (t Type) IsAlias() bool {
+	if t.IsMultipleInheritance() || t.IsArray() || t.IsUnion() || t.TypeString() == "object" {
+		return false
+	}
+	return t.TypeString() != "" && len(t.Properties) == 0
+}
+
 // see if the 'Type' field is a JSON schema
-func (t *Type) postProcess() error {
-	if !t.IsJSONType() {
-		return nil
+func (t *Type) postProcess(name string, apiDef *APIDefinition) error {
+	t.Name = name
+	t._apiDef = apiDef
+
+	if t.IsJSONType() {
+		return t.postProcessJSONSchema()
 	}
 
+	// process type in properties
+	for name := range t.Properties {
+		t.parseOptionalProperty(name)
+		t.createTypeFromPropProperty(name, apiDef)
+		t.createTypeFromPropItems(name, apiDef)
+	}
+	return nil
+}
+
+// parse property with `?` suffix as optional property
+func (t *Type) parseOptionalProperty(name string) {
+	if !strings.HasSuffix(name, "?") {
+		return
+	}
+	newName := strings.TrimSuffix(name, "?")
+
+	p := t.Properties[name]
+
+	// we will modify both property name
+	// and content, so we delete it
+	delete(t.Properties, name)
+
+	switch p.(type) {
+	case string:
+		// if it is a simple string
+		// convert it to map style property
+		newProp := map[interface{}]interface{}{}
+		newProp["type"] = p
+		newProp["required"] = false
+		t.Properties[newName] = newProp
+
+	case map[interface{}]interface{}:
+		// already in map style property
+		propMap := p.(map[interface{}]interface{})
+		propMap["required"] = false
+		t.Properties[newName] = propMap
+	default:
+		log.Fatalf("unexpeced property type: %v", p)
+	}
+}
+
+// create type from item with inline type definition
+func (t *Type) createTypeFromPropItems(name string, apiDef *APIDefinition) {
+	p := t.Properties[name]
+
+	// propMap is this properties as map
+	propMap, ok := p.(map[interface{}]interface{})
+	if !ok {
+		return
+	}
+
+	// only process the array
+	tip, ok := propMap["type"]
+	if !ok || tip != "array" {
+		return
+	}
+
+	// only process if it has 'items' field
+	itemsIf, ok := propMap["items"]
+	if !ok {
+		return
+	}
+
+	// check it's validity
+	items, ok := itemsIf.(map[interface{}]interface{})
+	if !ok {
+		return
+	}
+
+	// to define new type, it needs to have 'properties' field
+	props, ok := items["properties"].(map[interface{}]interface{})
+	if !ok { // doesn't define new type, no problem, we can simply return
+		return
+	}
+	newName := t.Name + name + "Item"
+	created := apiDef.createType(newName, tip, props)
+
+	delete(items, "properties")
+	items["type"] = newName
+	propMap["items"] = items
+
+	t.Properties[name] = propMap
+
+	if created {
+		createdType := apiDef.Types[newName]
+		createdType.postProcess(newName, apiDef)
+	}
+}
+
+// create type from property's property
+func (t *Type) createTypeFromPropProperty(name string, apiDef *APIDefinition) {
+	p := t.Properties[name]
+	// only process map[interface]interface{}
+	propMap, ok := p.(map[interface{}]interface{})
+	if !ok {
+		return
+	}
+
+	// only process if it has 'properties' field
+	propsIf, ok := propMap["properties"]
+	if !ok {
+		return
+	}
+
+	// check validity of the properties
+	props, ok := propsIf.(map[interface{}]interface{})
+	if !ok {
+		panic("inline properties expect properties in type:map[string]interface{}")
+	}
+
+	newName := t.Name + name
+	created := apiDef.createType(newName, propMap["type"], props)
+
+	propMap["type"] = newName
+
+	// delete the 'properties' field
+	delete(propMap, "properties")
+
+	t.Properties[name] = propMap
+
+	// post process the created type
+	if created {
+		createdType := apiDef.Types[newName]
+		createdType.postProcess(newName, apiDef)
+	}
+
+}
+func (t *Type) postProcessJSONSchema() error {
 	var jt JSONSchema
 
 	if err := json.Unmarshal([]byte(t.TypeString()), &jt); err != nil {
@@ -620,8 +797,63 @@ type BodiesProperty struct {
 	Properties map[string]interface{} `yaml:"properties"`
 
 	Type interface{}
+
+	Items interface{}
 }
 
+// TypeString returns string representation of the type of the body
 func (bp BodiesProperty) TypeString() string {
 	return interfaceToString(bp.Type)
+}
+
+// GetProperty gets property with given name
+// from a bodies
+func (bp BodiesProperty) GetProperty(name string) Property {
+	p, ok := bp.Properties[name]
+	if !ok {
+		panic(fmt.Errorf("can't find property name %v", name))
+	}
+	return toProperty(name, p)
+}
+
+// - normalize inline array definition
+// - TODO : handle inlined type definition as part of
+//	 https://github.com/Jumpscale/go-raml/issues/96
+func (bp *BodiesProperty) postProcess() {
+	bp.normalizeArray()
+}
+
+// change this form
+// type: array
+// items:
+//   type: something
+//
+// to this form
+// type: something[]
+func (bp *BodiesProperty) normalizeArray() {
+	// `type` and `items` can't be nil
+	if bp.Type == nil || bp.Items == nil {
+		return
+	}
+
+	// make sure `type` value = 'array'
+	typeStr, ok := bp.Type.(string)
+	if !ok && typeStr != arrayType {
+		return
+	}
+
+	// check items value
+	switch item := bp.Items.(type) {
+	case string:
+		bp.Type = item + "[]"
+		bp.Items = nil
+	case map[interface{}]interface{}:
+		tip, ok := item["type"].(string)
+		if !ok {
+			return
+		}
+		bp.Type = tip + "[]"
+		delete(item, "type")
+		bp.Items = item
+	}
 }

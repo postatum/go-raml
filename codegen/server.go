@@ -7,9 +7,11 @@ import (
 	log "github.com/Sirupsen/logrus"
 
 	"github.com/Jumpscale/go-raml/codegen/apidocs"
+	"github.com/Jumpscale/go-raml/codegen/generator"
 	"github.com/Jumpscale/go-raml/codegen/golang"
 	"github.com/Jumpscale/go-raml/codegen/nim"
 	"github.com/Jumpscale/go-raml/codegen/python"
+	"github.com/Jumpscale/go-raml/codegen/tarantool"
 	"github.com/Jumpscale/go-raml/raml"
 )
 
@@ -17,6 +19,7 @@ var (
 	errInvalidLang = errors.New("invalid language")
 )
 
+// Server represents server code
 type Server struct {
 	RAMLFile         string
 	Dir              string // Destination directory
@@ -40,20 +43,22 @@ func (s *Server) Generate() error {
 		return err
 	}
 
+	var generator generator.Server
+
 	switch s.Lang {
 	case langGo:
-		gs := golang.NewServer(apiDef, s.PackageName, s.APIDocsDir, s.RootImportPath, s.WithMain,
-			s.APIFilePerMethod, s.Dir, s.LibRootURLs)
-		err = gs.Generate()
+		generator = golang.NewServer(apiDef, s.PackageName, s.APIDocsDir, s.RootImportPath, s.WithMain,
+			s.Dir, s.LibRootURLs)
 	case langPython:
-		ps := python.NewServer(s.Kind, apiDef, s.APIDocsDir, s.WithMain, s.LibRootURLs)
-		err = ps.Generate(s.Dir)
+		generator = python.NewServer(s.Kind, apiDef, s.APIDocsDir, s.Dir, s.WithMain, s.LibRootURLs)
 	case langNim:
-		ns := nim.NewServer(apiDef, s.APIDocsDir, s.Dir)
-		err = ns.Generate()
+		generator = nim.NewServer(apiDef, s.APIDocsDir, s.Dir)
+	case langTarantool:
+		generator = tarantool.NewServer(apiDef, s.APIDocsDir, s.Dir)
 	default:
 		return errInvalidLang
 	}
+	err = generator.Generate()
 	if err != nil {
 		return err
 	}

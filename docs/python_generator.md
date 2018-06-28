@@ -1,16 +1,21 @@
 # Python Code Generator
 
+## Requirements
+
+- [autopep8](https://pypi.python.org/pypi/autopep8) for automatic code formatting
+
 ## Server
 
 Generated server code use these libraries:
 
-- Flask as web framework
-- Flask WTF for request body validation
+- Flask or Sanic as web framework
+- [python jsonschema](https://pypi.python.org/pypi/jsonschema) for request body validation
 - [python-jose](https://github.com/mpdavis/python-jose) for JWT decoding
 
 ## Client
 
-Generated client library use [requests](http://docs.python-requests.org/en/master/) as http library.
+Generated client library use [requests](http://docs.python-requests.org/en/master/) or 
+[aiohttp](http://aiohttp.readthedocs.io/en/stable/) as http library.
 
 
 ## Type
@@ -28,23 +33,24 @@ RAML Enum become python enum as described in https://docs.python.org/3/library/e
 
 ## Input Validation
 
-go-raml use Flask WTF for request body validation.
+Except for builtin types, generated server use python-jsonschema for request body validation.
 
-    Validation              |   Python
---------------------------- | ------
- minLength                  |   v
- maxLength                  |   v
- pattern                    |   v
- minimum                    |   v
- maximum                    |   v
- format                     |   x
- multipleOf                 |   v
- array field minItems       |   v
- array field maxItems       |   v
- array field uniqueItems    |   x
- array Type minItems        |   x
- array Type maxItems        |   x
- array Type uniqueItems     |   x
+
+ |   Validation               | Status
+ | -------------------------- | ------
+ | minLength                  |   v
+ | maxLength                  |   v
+ | pattern                    |   v
+ | minimum                    |   v
+ | maximum                    |   v
+ | format                     |   x
+ | multipleOf                 |   v
+ | array field minItems       |   v
+ | array field maxItems       |   v
+ | array field uniqueItems    |   x
+ | array Type minItems        |   x
+ | array Type maxItems        |   x
+ | array Type uniqueItems     |   x
 
 
 ## Bodies
@@ -61,6 +67,8 @@ struct name = [Resource name][Method name][ReqBody|RespBody].
 Resources in the server are mapped to:
 
 - a flask blueprint module
+
+The generated server contains a handlers directory, the python handlers files are the only files that are not overwritten by a regeneration. Each api method has a generated handler file, this is where the user should add the implementation for each method.
 
 ### Client
 

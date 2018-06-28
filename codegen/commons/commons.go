@@ -10,14 +10,20 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"unicode"
 
 	log "github.com/Sirupsen/logrus"
 
 	"github.com/Jumpscale/go-raml/codegen/templates"
+	"github.com/Jumpscale/go-raml/raml"
 )
 
 var (
-	regNonAlphanum = regexp.MustCompile("[^A-Za-z0-9]+")
+	regValidIdentifier = regexp.MustCompile(`[^A-Za-z0-9\[\]]+`)
+)
+
+const (
+	underscore = "_"
 )
 
 const (
@@ -53,6 +59,9 @@ func NormalizeURITitle(URI string) string {
 // ParseDescription create string slice from an RAML description.
 // each element is a  description line
 func ParseDescription(desc string) []string {
+	if desc == "" {
+		return nil
+	}
 	// we need to trim it because our parser usually give
 	// space after last newline
 	desc = strings.TrimSpace(desc)
@@ -106,8 +115,11 @@ func GenerateFile(data interface{}, tmplFile, tmplName, filename string, overrid
 		return err
 	}
 
-	if strings.HasSuffix(filename, ".go") {
+	switch {
+	case strings.HasSuffix(filename, ".go"):
 		return runGoFmt(filename)
+	case strings.HasSuffix(filename, ".py"):
+		return runAutoPep8(filename)
 	}
 	return nil
 }
@@ -133,6 +145,7 @@ func isFileExist(filePath string) bool {
 // ParamizingURI creates parameterized URI
 // Input : raw string, ex : /users/{userId}/address/{addressId}
 // Output : "/users/"+userId+"/address/"+addressId
+// TODO : optimize with regex
 func ParamizingURI(URI, sep string) string {
 	uri := `"` + URI + `"`
 	// replace { with "+
@@ -150,16 +163,36 @@ func ParamizingURI(URI, sep string) string {
 	if strings.HasSuffix(uri, sep+`"`) {
 		uri = uri[:len(uri)-2]
 	}
-	return uri
+	return postProcessParamURI(uri, sep)
 }
 
 // run `go fmt` command to a file
 func runGoFmt(filePath string) error {
-	args := []string{"-w", filePath}
+	args := []string{
+		"-w",
+		filePath,
+	}
 
 	if out, err := exec.Command("gofmt", args...).CombinedOutput(); err != nil {
 		log.Errorf("Error running go fmt on '%s' failed:\n%s", filePath, string(out))
 		return errors.New("go fmt failed")
+	}
+	return nil
+}
+
+func runAutoPep8(filename string) error {
+	args := []string{
+		"-a",
+		"-a",
+		"--in-place",
+		"--max-line-length",
+		"120",
+		filename,
+	}
+	if out, err := exec.Command("autopep8", args...).CombinedOutput(); err != nil {
+		log.Errorf("Error running autopep8 on '%s' failed:\n%s",
+			filename, string(out))
+		return errors.New("autopep8 failed: make sure you have it installed")
 	}
 	return nil
 }
@@ -201,12 +234,97 @@ func IsStrInArray(arr []string, str string) bool {
 	return false
 }
 
-// replace non alphanumerics with "_"
-func replaceNonAlphanumerics(s string) string {
-	return strings.Trim(regNonAlphanum.ReplaceAllString(s, "_"), "_")
+// NormalizeIdentifier change invalid character in identifier
+// to `_`.
+// Edge cases:
+// - If started with invalid char, we prepend with `The_`
+// - don't replace `.` if it means a library
+func NormalizeIdentifier(s string) string {
+	if s == "" {
+		return s
+	}
+
+	str := regValidIdentifier.ReplaceAllString(s, underscore)
+
+	// it needs to be started with letter
+	// if not, prepend `The_`
+	startedWithLetter := func() bool {
+		r := []rune(str)
+		return unicode.IsLetter(r[0])
+	}()
+	if !startedWithLetter && !strings.HasPrefix(str, "[]") {
+		str = "The_" + str
+	}
+
+	return strings.Trim(str, "_")
+}
+
+func NormalizeIdentifierWithLib(s string, apiDef *raml.APIDefinition) string {
+	if strings.Index(s, ".") < 0 {
+		return NormalizeIdentifier(s)
+	}
+	splitted := strings.Split(s, ".")
+	if len(splitted) != 2 {
+		log.Fatalf("libImportPath invalid:%v", s)
+	}
+
+	if _, libFile := apiDef.FindLibFile(DenormalizePkgName(splitted[0])); libFile == "" {
+		// the '.' doesn't mean library
+		return NormalizeIdentifier(s)
+	}
+	return splitted[0] + "." + NormalizeIdentifier(splitted[1])
 }
 
 func DisplayNameToFuncName(str string) string {
 	str = strings.Replace(str, " ", "", -1) // remove the space
-	return replaceNonAlphanumerics(str)     // change the other to _
+	return NormalizeIdentifier(str)         // change the other to _
+}
+
+func SnackCaseServerMethodName(displayName, verb string, resource *raml.Resource) string {
+	if len(displayName) > 0 {
+		return DisplayNameToFuncName(displayName)
+	}
+	return NormalizeIdentifier(snakeCaseResourceURI(resource) + "_" + strings.ToLower(verb))
+}
+
+// create snake case function name from a resource URI
+func snakeCaseResourceURI(r *raml.Resource) string {
+	return _snakeCaseResourceURI(r, "")
+}
+
+func _snakeCaseResourceURI(r *raml.Resource, completeURI string) string {
+	if r == nil {
+		return completeURI
+	}
+	var snake string
+	if len(r.URI) > 0 {
+		uri := NormalizeURI(r.URI)
+		if len(uri) > 0 {
+			if r.Parent != nil { // not root resource, need to add "_"
+				snake = "_"
+			}
+
+			if strings.HasPrefix(r.URI, "/{") {
+				snake += "by" + strings.ToUpper(uri[:1])
+			} else {
+				snake += strings.ToLower(uri[:1])
+			}
+
+			if len(uri) > 1 { // append with the rest of uri
+				snake += uri[1:]
+			}
+		}
+	}
+	return _snakeCaseResourceURI(r.Parent, snake+completeURI)
+}
+
+func postProcessParamURI(uri, sep string) string {
+	arrs := strings.Split(uri, sep)
+	for i, elem := range arrs {
+		if strings.HasPrefix(elem, `"`) {
+			continue
+		}
+		arrs[i] = NormalizeIdentifier(elem)
+	}
+	return strings.Join(arrs, sep)
 }

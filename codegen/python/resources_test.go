@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/Jumpscale/go-raml/raml"
+	"github.com/Jumpscale/go-raml/utils"
+
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -20,16 +22,16 @@ func TestPythonResource(t *testing.T) {
 			err := raml.ParseFile("../fixtures/server_resources/deliveries.raml", apiDef)
 			So(err, ShouldBeNil)
 
-			fs := NewFlaskServer(apiDef, "apidocs", true, nil)
+			fs := NewFlaskServer(apiDef, "apidocs", targetdir, true, nil, false)
 
 			err = fs.generateResources(targetdir)
 			So(err, ShouldBeNil)
 
 			// check  api implementation
-			s, err := testLoadFile(filepath.Join(targetdir, "deliveries.py"))
+			s, err := utils.TestLoadFile(filepath.Join(targetdir, "deliveries_api.py"))
 			So(err, ShouldBeNil)
 
-			tmpl, err := testLoadFile("../fixtures/server_resources/deliveries.py")
+			tmpl, err := utils.TestLoadFile("../fixtures/server_resources/deliveries_api.py")
 			So(err, ShouldBeNil)
 			So(s, ShouldEqual, tmpl)
 		})

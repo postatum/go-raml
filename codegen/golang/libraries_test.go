@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/Jumpscale/go-raml/raml"
-
+	"github.com/Jumpscale/go-raml/utils"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -18,7 +18,7 @@ var (
 	}
 )
 
-func TestGoLibrary(t *testing.T) {
+func TestLibrary(t *testing.T) {
 	Convey("Library usage in server", t, func() {
 		var apiDef raml.APIDefinition
 
@@ -28,7 +28,7 @@ func TestGoLibrary(t *testing.T) {
 		err = raml.ParseFile("../fixtures/libraries/api.raml", &apiDef)
 		So(err, ShouldBeNil)
 
-		server := NewServer(&apiDef, "main", "apidocs", "examples.com/ramlcode", true, false,
+		server := NewServer(&apiDef, "main", "apidocs", "examples.com/ramlcode", true,
 			targetDir, testLibRootURLs)
 		err = server.Generate()
 		So(err, ShouldBeNil)
@@ -38,16 +38,19 @@ func TestGoLibrary(t *testing.T) {
 			Result   string
 			Expected string
 		}{
-			{"Place.go", "Place.txt"},
-			{"dirs_api.go", "dirs_api.txt"},
-			{"configs_api.go", "configs_api.txt"},
+			{filepath.Join(typeDir, "Place.go"), "Place.txt"},
+			{filepath.Join(serverAPIDir, "dirs", "dirs_api.go"), "dirs_api.txt"},
+			{filepath.Join(serverAPIDir, "configs", "configs_api.go"), "configs_api.txt"},
+			{filepath.Join(serverAPIDir, "configs", "configs_api_Put.go"), "configs_api_Put.txt"},
+			{filepath.Join(serverAPIDir, "configs", "configs_api_Post.go"), "configs_api_Post.txt"},
+			{filepath.Join(serverAPIDir, "configs", "configs_api_Get.go"), "configs_api_Get.txt"},
 		}
 
 		for _, check := range checks {
-			s, err := testLoadFile(filepath.Join(targetDir, check.Result))
+			s, err := utils.TestLoadFile(filepath.Join(targetDir, check.Result))
 			So(err, ShouldBeNil)
 
-			tmpl, err := testLoadFile(filepath.Join(rootFixture, check.Expected))
+			tmpl, err := utils.TestLoadFile(filepath.Join(rootFixture, check.Expected))
 			So(err, ShouldBeNil)
 
 			So(s, ShouldEqual, tmpl)
@@ -77,7 +80,7 @@ func TestGoLibrary(t *testing.T) {
 			Result   string
 			Expected string
 		}{
-			{"Place.go", "Place.txt"},
+			{filepath.Join(typeDir, "Place.go"), "Place.txt"},
 			{"client_exampleapi.go", "client_exampleapi.txt"},
 			{"client_utils.go", "client_utils.txt"},
 			{"dirs_service.go", "dirs_service.txt"},
@@ -85,10 +88,10 @@ func TestGoLibrary(t *testing.T) {
 		}
 
 		for _, check := range checks {
-			s, err := testLoadFile(filepath.Join(targetDir, check.Result))
+			s, err := utils.TestLoadFile(filepath.Join(targetDir, check.Result))
 			So(err, ShouldBeNil)
 
-			tmpl, err := testLoadFile(filepath.Join(rootFixture, check.Expected))
+			tmpl, err := utils.TestLoadFile(filepath.Join(rootFixture, check.Expected))
 			So(err, ShouldBeNil)
 
 			So(s, ShouldEqual, tmpl)
@@ -104,12 +107,13 @@ func TestGoLibrary(t *testing.T) {
 		So(err, ShouldBeNil)
 
 		Convey("server", func() {
+
 			var apiDef raml.APIDefinition
 
 			err = raml.ParseFile("../fixtures/raml-examples/libraries/api.raml", &apiDef)
 			So(err, ShouldBeNil)
 
-			server := NewServer(&apiDef, "main", "apidocs", "examples.com/libro", true, false, targetDir, nil)
+			server := NewServer(&apiDef, "main", "apidocs", "examples.com/libro", true, targetDir, nil)
 			err = server.Generate()
 			So(err, ShouldBeNil)
 
@@ -118,15 +122,15 @@ func TestGoLibrary(t *testing.T) {
 				Result   string
 				Expected string
 			}{
-				{"person_api.go", "person_api.txt"},
-				{"types_lib/Person.go", "types_lib/Person.txt"},
+				{filepath.Join(serverAPIDir, "person", "person_api.go"), "person_api.txt"},
+				{filepath.Join("types_lib", typeDir, "Person.go"), "types_lib/Person.txt"},
 			}
 
 			for _, check := range checks {
-				s, err := testLoadFile(filepath.Join(targetDir, check.Result))
+				s, err := utils.TestLoadFile(filepath.Join(targetDir, check.Result))
 				So(err, ShouldBeNil)
 
-				tmpl, err := testLoadFile(filepath.Join(rootFixture, check.Expected))
+				tmpl, err := utils.TestLoadFile(filepath.Join(rootFixture, check.Expected))
 				So(err, ShouldBeNil)
 
 				So(s, ShouldEqual, tmpl)
@@ -151,14 +155,14 @@ func TestGoLibrary(t *testing.T) {
 				Expected string
 			}{
 				{"person_service.go", "person_service.txt"},
-				{"types_lib/Person.go", "types_lib/Person.txt"},
+				{filepath.Join("types_lib", typeDir, "Person.go"), "types_lib/Person.txt"},
 			}
 
 			for _, check := range checks {
-				s, err := testLoadFile(filepath.Join(targetDir, check.Result))
+				s, err := utils.TestLoadFile(filepath.Join(targetDir, check.Result))
 				So(err, ShouldBeNil)
 
-				tmpl, err := testLoadFile(filepath.Join(rootFixture, check.Expected))
+				tmpl, err := utils.TestLoadFile(filepath.Join(rootFixture, check.Expected))
 				So(err, ShouldBeNil)
 
 				So(s, ShouldEqual, tmpl)
@@ -170,4 +174,21 @@ func TestGoLibrary(t *testing.T) {
 		})
 	})
 
+}
+
+func TestAliasLibTypeImportPath(t *testing.T) {
+	Convey("TestAliasLibTypeImportPath", t, func() {
+		tests := []struct {
+			path    string
+			aliased string
+		}{
+			{"a.com/libraries/libname/types", `libname_types "a.com/libraries/libname/types"`},
+			{"a.com/libname/types", `libname_types "a.com/libname/types"`},
+		}
+
+		for _, test := range tests {
+			aliased := aliasLibTypeImportPath(test.path)
+			So(aliased, ShouldEqual, test.aliased)
+		}
+	})
 }

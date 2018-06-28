@@ -3,16 +3,11 @@ package golang
 import (
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/Jumpscale/go-raml/codegen/commons"
 	"github.com/Jumpscale/go-raml/codegen/resource"
 	"github.com/Jumpscale/go-raml/raml"
-)
-
-const (
-	langGo = "go"
 )
 
 // Client represents a Golang client
@@ -31,29 +26,29 @@ type Client struct {
 // NewClient creates a new Golang client
 func NewClient(apiDef *raml.APIDefinition, packageName, rootImportPath, targetDir string,
 	libsRootURLs []string) (Client, error) {
+
 	// rootImportPath only needed if we use libraries
 	if rootImportPath == "" && len(apiDef.Libraries) > 0 {
 		return Client{}, fmt.Errorf("--import-path can't be empty when we use libraries")
 	}
 
+	// TODO : get rid of this global variable
 	rootImportPath = setRootImportPath(rootImportPath, targetDir)
 	globRootImportPath = rootImportPath
 	globAPIDef = apiDef
 	globLibRootURLs = libsRootURLs
 
+	// creates client services objects
 	services := map[string]*ClientService{}
-	for k, v := range apiDef.Resources {
-		rd := resource.New(apiDef, commons.NormalizeURITitle(apiDef.Title), packageName)
-		rd.GenerateMethods(&v, langGo, newServerMethod, newGoClientMethod)
-		services[k] = &ClientService{
-			rootEndpoint: k,
-			PackageName:  packageName,
-			Methods:      rd.Methods,
-		}
+	for endpoint, res := range apiDef.Resources {
+		rd := resource.New(apiDef, &res, commons.NormalizeURITitle(endpoint), true)
+		services[endpoint] = newClientService(endpoint, packageName, &rd)
 	}
+
+	// creates client object
 	client := Client{
 		apiDef:         apiDef,
-		Name:           commons.NormalizeURI(apiDef.Title),
+		Name:           commons.NormalizeIdentifier(commons.NormalizeURI(apiDef.Title)),
 		BaseURI:        apiDef.BaseURI,
 		libraries:      apiDef.Libraries,
 		PackageName:    packageName,
@@ -71,17 +66,20 @@ func NewClient(apiDef *raml.APIDefinition, packageName, rootImportPath, targetDi
 
 // Generate generates all Go client files
 func (gc Client) Generate() error {
+	if err := commons.CheckDuplicatedTitleTypes(gc.apiDef); err != nil {
+		return err
+	}
 	// helper package
 	gh := goramlHelper{
-		packageName: gc.PackageName,
-		packageDir:  "",
+		packageName: "goraml",
+		packageDir:  "goraml",
 	}
 	if err := gh.generate(gc.TargetDir); err != nil {
 		return err
 	}
 
 	// generate struct
-	if err := generateAllStructs(gc.apiDef, gc.TargetDir, gc.PackageName); err != nil {
+	if err := generateAllStructs(gc.apiDef, gc.TargetDir); err != nil {
 		return err
 	}
 
@@ -107,13 +105,13 @@ func (gc Client) Generate() error {
 // generate Go client helper
 func (gc *Client) generateHelperFile(dir string) error {
 	fileName := filepath.Join(dir, "/client_utils.go")
-	return commons.GenerateFile(gc, "./templates/client_utils_go.tmpl", "client_utils_go", fileName, false)
+	return commons.GenerateFile(gc, "./templates/golang/client_utils_go.tmpl", "client_utils_go", fileName, true)
 }
 
 func (gc *Client) generateServices(dir string) error {
 	for _, s := range gc.Services {
-		sort.Sort(resource.ByEndpoint(s.Methods))
-		if err := commons.GenerateFile(s, "./templates/client_service_go.tmpl", "client_service_go", s.filename(dir), false); err != nil {
+		//sort.Sort(resource.ByEndpoint(s.Methods))
+		if err := commons.GenerateFile(s, "./templates/golang/client_service_go.tmpl", "client_service_go", s.filename(dir), true); err != nil {
 			return err
 		}
 	}
@@ -122,16 +120,16 @@ func (gc *Client) generateServices(dir string) error {
 
 // generate security related files
 // it currently only supports itsyou.online oauth2
-func (c *Client) generateSecurity(dir string) error {
-	for name, ss := range c.apiDef.SecuritySchemes {
+func (gc *Client) generateSecurity(dir string) error {
+	for name, ss := range gc.apiDef.SecuritySchemes {
 		if v, ok := ss.Settings["accessTokenUri"]; ok {
 			ctx := map[string]string{
-				"ClientName":     c.Name,
+				"ClientName":     gc.Name,
 				"AccessTokenURI": fmt.Sprintf("%v", v),
-				"PackageName":    c.PackageName,
+				"PackageName":    gc.PackageName,
 			}
 			filename := filepath.Join(dir, "oauth2_client_"+name+".go")
-			if err := commons.GenerateFile(ctx, "./templates/oauth2_client_go.tmpl", "oauth2_client_go", filename, true); err != nil {
+			if err := commons.GenerateFile(ctx, "./templates/golang/oauth2_client_go.tmpl", "oauth2_client_go", filename, true); err != nil {
 				return err
 			}
 		}
@@ -142,5 +140,5 @@ func (c *Client) generateSecurity(dir string) error {
 // generate Go client lib file
 func (gc *Client) generateClientFile(dir string) error {
 	fileName := filepath.Join(dir, "/client_"+strings.ToLower(gc.Name)+".go")
-	return commons.GenerateFile(gc, "./templates/client_go.tmpl", "client_go", fileName, false)
+	return commons.GenerateFile(gc, "./templates/golang/client_go.tmpl", "client_go", fileName, true)
 }

@@ -1,0 +1,10 @@
+{{- define "server_resource_api_main_go" -}}
+// THIS FILE IS SAFE TO EDIT. It will not be overwritten when rerunning go-raml.
+package {{.PackageName}}
+
+{{$apiName := .Name}}
+// {{.Name}}API is API implementation of {{.Endpoint}} root endpoint
+type {{.Name}}API struct {
+}
+
+{{- end -}}

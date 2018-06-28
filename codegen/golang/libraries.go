@@ -1,10 +1,10 @@
 package golang
 
 import (
+	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
-
-	log "github.com/Sirupsen/logrus"
 
 	"github.com/Jumpscale/go-raml/codegen/commons"
 	"github.com/Jumpscale/go-raml/codegen/libraries"
@@ -53,8 +53,7 @@ func (gl *goLibrary) targetDir() string {
 
 	fileDir := goLibPackageDir(gl.name, libraries.StripLibRootURL(gl.Filename, gl.libRootURLs))
 
-	res := filepath.Join(baseDir, fileDir)
-	return commons.NormalizePkgName(res)
+	return filepath.Join(baseDir, fileDir)
 }
 
 // generate code of all libraries
@@ -70,20 +69,20 @@ func generateLibraries(libraries map[string]*raml.Library, baseDir string, libsR
 }
 
 // generate code of this library
-func (l *goLibrary) generate() error {
+func (gl *goLibrary) generate() error {
 	// generate all Type structs
-	if err := generateStructs(l.Types, l.targetDir(), l.PackageName); err != nil {
+	if err := generateStructs(gl.Types, gl.targetDir()); err != nil {
 		return err
 	}
 
 	// security schemes
-	if err := generateSecurity(l.SecuritySchemes, l.targetDir(), l.PackageName); err != nil {
+	if err := generateSecurity(gl.SecuritySchemes, gl.targetDir(), gl.PackageName); err != nil {
 		return err
 	}
 
 	// included libraries
-	for name, ramlLib := range l.Libraries {
-		childLib := newGoLibrary(name, ramlLib, l.targetDir(), l.rootTargetDir, globLibRootURLs)
+	for name, ramlLib := range gl.Libraries {
+		childLib := newGoLibrary(name, ramlLib, gl.targetDir(), gl.rootTargetDir, globLibRootURLs)
 		if err := childLib.generate(); err != nil {
 			return err
 		}
@@ -99,28 +98,62 @@ func libImportPath(rootImportPath, typ string, libRootURLs []string) string {
 		return ""
 	}
 
+	if strings.Index(typ, "json.RawMessage") >= 0 {
+		return `"encoding/json"`
+	}
+
 	// library name in the current document
 	libName := strings.Split(typ, ".")[0]
 
 	if libName == "goraml" { // special package name, reserved for goraml
-		return filepath.Join(rootImportPath, "goraml")
+		return fmt.Sprintf(`"%s"`, joinImportPath(rootImportPath, "goraml"))
 	}
 
 	// raml file of this lib
 	libDir, libFile := globAPIDef.FindLibFile(commons.DenormalizePkgName(libName))
 
 	if libFile == "" {
-		log.Fatalf("can't find library : %v", libName)
+		return ""
 	}
 
 	libPath := libraries.JoinPath(libDir, libFile, libRootURLs)
 
-	return filepath.Join(rootImportPath, goLibPackageDir(libName, libPath))
+	importPath := joinImportPath(rootImportPath, path.Join(goLibPackageDir(libName, libPath), typeDir))
+	return aliasLibTypeImportPath(importPath)
+}
+
+// generate import line with alias style
+// example:
+//  a.com/libraries/libname/types ->  libname_types "a.com/libraries/libname/types"
+// because we generate all raml Types under `types` directory and package,
+// all types from libraries is going to have import line with this format:
+//    root_import_path/libraries/libname/types
+// we create the alias to avoid conflict with other `types` directory/package.
+func aliasLibTypeImportPath(path string) string {
+	elems := strings.Split(path, "/")
+	n := len(elems)
+
+	return fmt.Sprintf(`%v_%v "%v"`, elems[n-2], elems[n-1], path)
 }
 
 // returns Go package directory of a library
 // name is library name. filename is library file name.
 // for the rule, see comment of `type goLibrary struct`
 func goLibPackageDir(name, filename string) string {
-	return commons.NormalizePkgName(filepath.Join(filepath.Dir(filename), name))
+	dir := filepath.Join(filepath.Dir(filename), name)
+
+	// escape last dir element
+	elems := strings.Split(dir, "/")
+	elems[len(elems)-1] = commons.NormalizeIdentifier(elems[len(elems)-1])
+	return strings.Join(elems, "/")
+}
+
+// joinImportPath should always use `/`.
+// this is not the case in windows.
+// so we need to split it based on file separator and then join again using `/`
+func joinImportPath(baseDir, dir string) string {
+	baseDirElems := strings.Split(baseDir, string(filepath.Separator))
+	dirElems := strings.Split(dir, string(filepath.Separator))
+	elems := append(baseDirElems, dirElems...)
+	return path.Join(elems...)
 }

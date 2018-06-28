@@ -2,37 +2,39 @@ package golang
 
 import (
 	"sort"
+	"strings"
 
+	"github.com/Jumpscale/go-raml/codegen/commons"
 	"github.com/Jumpscale/go-raml/codegen/resource"
 )
 
 // generate Server's Go representation of RAML resources
-func (s *Server) generateServerResources(dir string) ([]resource.ResourceInterface, error) {
-	var rds []resource.ResourceInterface
+func (s *Server) generateServerResources(dir string) ([]*goResource, error) {
+	var serverResources []*goResource
 
-	rs := s.apiDef.Resources
+	resources := s.apiDef.Resources
 
 	// sort the keys, so we have resource sorted by keys.
 	// the generated code actually don't need it to be sorted.
 	// but test fixture need it
 	var keys []string
-	for k := range rs {
+	for k := range resources {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
 	// create resource def
 	var err error
-	for _, k := range keys {
-		r := rs[k]
-		rd := resource.New(s.apiDef, k, s.PackageName)
-		rd.IsServer = true
-		gr := goResource{Resource: &rd}
-		err = gr.generate(&r, k, dir, s.APIFilePerMethod, s.libsRootURLs)
+	for _, endpoint := range keys {
+		r := resources[endpoint]
+		rd := resource.New(s.apiDef, &r, endpoint, true)
+		pkgName := strings.ToLower(commons.NormalizeIdentifier(rd.Name))
+		gr := newGoResource(&rd, pkgName)
+		err = gr.generate(&r, endpoint, dir, s.libsRootURLs)
 		if err != nil {
-			return rds, err
+			return nil, err
 		}
-		rds = append(rds, rd)
+		serverResources = append(serverResources, gr)
 	}
-	return rds, nil
+	return serverResources, nil
 }

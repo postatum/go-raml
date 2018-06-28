@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/Jumpscale/go-raml/raml"
+	"github.com/Jumpscale/go-raml/utils"
+
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -21,23 +23,23 @@ func TestGenerateClassFromBody(t *testing.T) {
 			err := raml.ParseFile("../fixtures/struct/struct.raml", apiDef)
 			So(err, ShouldBeNil)
 
-			fs := NewFlaskServer(apiDef, "apidocs", true, nil)
-			err = fs.Generate(targetDir)
+			fs := NewFlaskServer(apiDef, "apidocs", targetDir, true, nil, false)
+			err = fs.Generate()
 			So(err, ShouldBeNil)
 
-			rootFixture := "./fixtures/wtf_class/"
+			rootFixture := "./fixtures/from_body/"
 			checks := []struct {
 				Result   string
 				Expected string
 			}{
-				{"UsersPostReqBody.py", "UsersPostReqBody.py"},
+				{"handlers/schema/UsersPostReqBody_schema.json", "UsersPostReqBody_schema.json"},
 			}
 
 			for _, check := range checks {
-				s, err := testLoadFile(filepath.Join(targetDir, check.Result))
+				s, err := utils.TestLoadFile(filepath.Join(targetDir, check.Result))
 				So(err, ShouldBeNil)
 
-				tmpl, err := testLoadFile(filepath.Join(rootFixture, check.Expected))
+				tmpl, err := utils.TestLoadFile(filepath.Join(rootFixture, check.Expected))
 				So(err, ShouldBeNil)
 
 				So(s, ShouldEqual, tmpl)
@@ -49,23 +51,23 @@ func TestGenerateClassFromBody(t *testing.T) {
 			err := raml.ParseFile("../fixtures/struct/json/api.raml", apiDef)
 			So(err, ShouldBeNil)
 
-			fs := NewFlaskServer(apiDef, "apidocs", true, nil)
-			err = fs.Generate(targetDir)
+			fs := NewFlaskServer(apiDef, "apidocs", targetDir, true, nil, false)
+			err = fs.Generate()
 			So(err, ShouldBeNil)
 
-			rootFixture := "./fixtures/wtf_class/json/"
+			rootFixture := "./fixtures/from_body/json/"
 			checks := []struct {
 				Result   string
 				Expected string
 			}{
-				{"PersonPostReqBody.py", "PersonPostReqBody.py"},
+				{"handlers/schema/PersonPostReqBody_schema.json", "PersonPostReqBody_schema.json"},
 			}
 
 			for _, check := range checks {
-				s, err := testLoadFile(filepath.Join(targetDir, check.Result))
+				s, err := utils.TestLoadFile(filepath.Join(targetDir, check.Result))
 				So(err, ShouldBeNil)
 
-				tmpl, err := testLoadFile(filepath.Join(rootFixture, check.Expected))
+				tmpl, err := utils.TestLoadFile(filepath.Join(rootFixture, check.Expected))
 				So(err, ShouldBeNil)
 
 				So(s, ShouldEqual, tmpl)

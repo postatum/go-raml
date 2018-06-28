@@ -258,14 +258,19 @@ func substituteParams(toReplace, words string, dicts map[string]interface{}) str
 
 	// substitute the params
 	for _, p := range params {
-		pVal := getParamValue(removeParamBracket(p), dicts)
+		pVal, ok := getParamValue(removeParamBracket(p), dicts)
+		if !ok {
+			// only replace if param is found
+			continue
+		}
 		words = strings.Replace(words, p, pVal, -1)
 	}
 	return words
 }
 
 // get value of a resource type param
-func getParamValue(param string, dicts map[string]interface{}) string {
+// return false if not exists
+func getParamValue(param string, dicts map[string]interface{}) (string, bool) {
 	// split between inflectors and real param
 	// real param and each inflector is seperated by `|`
 	cleanParam, inflectors := func() (string, string) {
@@ -277,14 +282,17 @@ func getParamValue(param string, dicts map[string]interface{}) string {
 	}()
 
 	// get the value
-	val := func() string {
+	val, ok := func() (string, bool) {
 		// get from type parameters
 		val, ok := dicts[cleanParam]
 		if !ok {
-			log.Fatalf("getParamValue unknown param:%v, dicts=%v", cleanParam, dicts)
+			return "", false
 		}
-		return fmt.Sprintf("%v", val)
+		return fmt.Sprintf("%v", val), true
 	}()
+	if !ok {
+		return "", false
+	}
 
 	// inflect the value if needed
 	if inflectors != "" {
@@ -297,16 +305,13 @@ func getParamValue(param string, dicts map[string]interface{}) string {
 			}
 		}
 	}
-	return val
+	return val, true
 }
 
 // CleanURI returns URI without `/`, `\`', `{`, and `}`
 func (r *Resource) CleanURI() string {
-	s := strings.Replace(r.URI, "/", "", -1)
-	s = strings.Replace(s, `\`, "", -1)
-	s = strings.Replace(s, "{", "", -1)
-	s = strings.Replace(s, "}", "", -1)
-	return strings.TrimSpace(s)
+	s := removeDoubleSlash(r.URI)
+	return strings.TrimSpace(removeDoubleChevron(s))
 }
 
 // FullURI returns full/absolute URI of this resource
@@ -320,4 +325,28 @@ func doFullURI(r *Resource, completeURI string) string {
 		return completeURI
 	}
 	return doFullURI(r.Parent, completeURI)
+}
+
+// from spec : the rightmost of the non-URI-parameter-containing path fragments.
+func (r *Resource) resourcePathName() string {
+	// remove trailing slash
+	uri := strings.TrimSuffix(r.URI, "/")
+
+	if uri != "" && !strings.HasSuffix(uri, "}") {
+		// check if it is non-URI params, which ended by "}"
+		elems := strings.Split(uri, "/")
+		return elems[len(elems)-1]
+	}
+	if r.Parent == nil {
+		return ""
+	}
+	return r.Parent.resourcePathName()
+}
+
+func removeDoubleSlash(s string) string {
+	return strings.TrimPrefix(strings.TrimSuffix(s, "/"), "/")
+}
+
+func removeDoubleChevron(s string) string {
+	return strings.TrimPrefix(strings.TrimSuffix(s, "}"), "{")
 }

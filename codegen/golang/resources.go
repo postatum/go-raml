@@ -2,7 +2,6 @@ package golang
 
 import (
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/Jumpscale/go-raml/codegen/commons"
@@ -11,25 +10,36 @@ import (
 )
 
 const (
-	resourceIfTemplate  = "./templates/server_resources_interface.tmpl" // resource interface template
-	resourceAPITemplate = "./templates/server_resources_api.tmpl"       // resource API template
+	resourceIfTemplate  = "./templates/golang/server_resources_interface.tmpl" // resource interface template
+	resourceAPITemplate = "./templates/golang/server_resources_api.tmpl"       // resource API template
+)
+
+const (
+	serverAPIDir = "handlers" // dir on which we put our server API implementation
 )
 
 type goResource struct {
 	*resource.Resource
+	Methods     []serverMethod
+	PackageName string
+}
+
+func newGoResource(rd *resource.Resource, packageName string) *goResource {
+	var methods []serverMethod
+	for _, rm := range rd.Methods {
+		methods = append(methods, newServerMethod(rm, rd.APIDef, rd))
+	}
+	return &goResource{
+		Resource:    rd,
+		Methods:     methods,
+		PackageName: packageName,
+	}
 }
 
 // generate interface file of a resource
 func (gr *goResource) generateInterfaceFile(directory string) error {
-	gr.SortMethods()
 	filename := directory + "/" + strings.ToLower(gr.Name) + "_if.go"
 	return commons.GenerateFile(gr, resourceIfTemplate, "resource_if_template", filename, true)
-}
-
-// generate API file of a resource
-func (gr *goResource) generateAPIFile(dir string) error {
-	filename := filepath.Join(dir, strings.ToLower(gr.Name)+"_api.go")
-	return commons.GenerateFile(gr, resourceAPITemplate, "resource_api_template", filename, false)
 }
 
 // generate API implementation in one file per method mode
@@ -42,21 +52,20 @@ func (gr *goResource) generateAPIImplementations(dir string) error {
 	}
 
 	mainFile := filepath.Join(dir, strings.ToLower(gr.Name)+"_api")
-	if err := commons.GenerateFile(mainCtx, "./templates/server_resource_api_main_go.tmpl",
+	if err := commons.GenerateFile(mainCtx, "./templates/golang/server_resource_api_main_go.tmpl",
 		"server_resource_api_main_go", mainFile+".go", false); err != nil {
 		return err
 	}
 
 	// generate per methods file
-	for _, mi := range gr.Methods {
-		sm := mi.(serverMethod)
+	for _, sm := range gr.Methods {
 		ctx := map[string]interface{}{
 			"Method":      sm,
 			"APIName":     gr.Name,
 			"PackageName": gr.PackageName,
 		}
 		filename := mainFile + "_" + sm.MethodName + ".go"
-		if err := commons.GenerateFile(ctx, "./templates/server_resource_api_impl_go.tmpl",
+		if err := commons.GenerateFile(ctx, "./templates/golang/server_resource_api_impl_go.tmpl",
 			"server_resource_api_impl_go", filename, false); err != nil {
 			return err
 		}
@@ -72,17 +81,13 @@ func (gr *goResource) generateAPIImplementations(dir string) error {
 // - API implementation
 //		implementation of the API interface.
 //		Don't generate if the file already exist
-func (gr *goResource) generate(r *raml.Resource, URI, dir string,
-	apiFilePerMethod bool, libRootURLs []string) error {
-	gr.GenerateMethods(r, "go", newServerMethod, newGoClientMethod)
+func (gr *goResource) generate(r *raml.Resource, URI, dir string, libRootURLs []string) error {
 	if err := gr.generateInterfaceFile(dir); err != nil {
 		return err
 	}
-	if !apiFilePerMethod {
-		return gr.generateAPIFile(dir)
-	} else {
-		return gr.generateAPIImplementations(dir)
-	}
+
+	apiDir := filepath.Join(dir, serverAPIDir, gr.PackageName)
+	return gr.generateAPIImplementations(apiDir)
 }
 
 // InterfaceImportPaths returns all packages imported by
@@ -93,9 +98,7 @@ func (gr goResource) InterfaceImportPaths() []string {
 		"github.com/gorilla/mux": struct{}{},
 	}
 
-	for _, v := range gr.Methods {
-		gm := v.(serverMethod)
-
+	for _, gm := range gr.Methods {
 		// if has middleware, we need to import middleware helper library
 		if len(gm.Middlewares) > 0 {
 			ip["github.com/justinas/alice"] = struct{}{}
@@ -108,7 +111,7 @@ func (gr goResource) InterfaceImportPaths() []string {
 	}
 	// return sorted array for predictable order
 	// we need it for unit test to always return same order
-	return sortImportPaths(ip)
+	return commons.MapToSortedStrings(ip)
 }
 
 // APIImportPaths returns all packages that need to be imported
@@ -117,8 +120,7 @@ func (gr goResource) APILibImportPaths() []string {
 	ip := map[string]struct{}{}
 
 	// methods
-	for _, v := range gr.Methods {
-		gm := v.(serverMethod)
+	for _, gm := range gr.Methods {
 		for _, v := range gm.Imports() {
 			ip[v] = struct{}{}
 		}
@@ -126,14 +128,5 @@ func (gr goResource) APILibImportPaths() []string {
 
 	// return sorted array for predictable order
 	// we need it for unit test to always return same order
-	return sortImportPaths(ip)
-}
-
-func sortImportPaths(ip map[string]struct{}) []string {
-	libs := []string{}
-	for k := range ip {
-		libs = append(libs, k)
-	}
-	sort.Strings(libs)
-	return libs
+	return commons.MapToSortedStrings(ip)
 }

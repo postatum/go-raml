@@ -9,6 +9,7 @@ import (
 	. "github.com/smartystreets/goconvey/convey"
 
 	"github.com/Jumpscale/go-raml/raml"
+	"github.com/Jumpscale/go-raml/utils"
 )
 
 func TestSanicServer(t *testing.T) {
@@ -21,8 +22,8 @@ func TestSanicServer(t *testing.T) {
 			err = raml.ParseFile("../fixtures/raml-examples/helloworld/helloworld.raml", apiDef)
 			So(err, ShouldBeNil)
 
-			server := NewSanicServer(apiDef, "apidocs", true)
-			err = server.Generate(targetDir)
+			server := NewSanicServer(apiDef, "apidocs", targetDir, true, nil)
+			err = server.Generate()
 			So(err, ShouldBeNil)
 
 			// check drones API implementation
@@ -37,10 +38,10 @@ func TestSanicServer(t *testing.T) {
 			}
 
 			for _, check := range checks {
-				s, err := testLoadFile(filepath.Join(targetDir, check.Result))
+				s, err := utils.TestLoadFile(filepath.Join(targetDir, check.Result))
 				So(err, ShouldBeNil)
 
-				tmpl, err := testLoadFile(filepath.Join(rootFixture, check.Expected))
+				tmpl, err := utils.TestLoadFile(filepath.Join(rootFixture, check.Expected))
 				So(err, ShouldBeNil)
 
 				So(s, ShouldEqual, tmpl)
@@ -53,8 +54,8 @@ func TestSanicServer(t *testing.T) {
 			err = raml.ParseFile("../fixtures/congo/api.raml", apiDef)
 			So(err, ShouldBeNil)
 
-			server := NewSanicServer(apiDef, "apidocs", true)
-			err = server.Generate(targetDir)
+			server := NewSanicServer(apiDef, "apidocs", targetDir, true, nil)
+			err = server.Generate()
 			So(err, ShouldBeNil)
 
 			// check drones API implementation
@@ -65,17 +66,40 @@ func TestSanicServer(t *testing.T) {
 				"deliveries_if.py",
 				"drones_api.py",
 				"drones_if.py",
-				"schema/User_schema.json",
+				"handlers/schema/User_schema.json",
+				"handlers/__init__.py",
+				"handlers/drones_postHandler.py",
 			}
 
 			for _, filename := range files {
-				s, err := testLoadFile(filepath.Join(targetDir, filename))
+				s, err := utils.TestLoadFile(filepath.Join(targetDir, filename))
 				So(err, ShouldBeNil)
 
-				tmpl, err := testLoadFile(filepath.Join(rootFixture, filename))
+				tmpl, err := utils.TestLoadFile(filepath.Join(rootFixture, filename))
 				So(err, ShouldBeNil)
 
 				So(s, ShouldEqual, tmpl)
+			}
+
+			// test that this file exist
+			files = []string{
+				"types/User.py",
+				"types/client_support.py",
+				"handlers/deliveries_getHandler.py",
+				"handlers/deliveries_postHandler.py",
+				"handlers/deliveries_byDeliveryId_getHandler.py",
+				"handlers/deliveries_byDeliveryId_patchHandler.py",
+				"handlers/deliveries_byDeliveryId_deleteHandler.py",
+				"handlers/drones_getHandler.py",
+				"handlers/drones_postHandler.py",
+				"handlers/drones_byDroneId_getHandler.py",
+				"handlers/drones_byDroneId_patchHandler.py",
+				"handlers/drones_byDroneId_deleteHandler.py",
+				"handlers/drones_byDroneId_deliveries_getHandler.py",
+			}
+			for _, f := range files {
+				_, err := os.Stat(filepath.Join(targetDir, f))
+				So(err, ShouldBeNil)
 			}
 
 		})

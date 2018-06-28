@@ -3,14 +3,20 @@ package types
 import (
 	"strings"
 
+	"github.com/Jumpscale/go-raml/codegen/commons"
 	"github.com/Jumpscale/go-raml/raml"
+	"github.com/pinzolo/casee"
 )
 
 const (
+	// HTTPRequest defines an HTTP request
 	HTTPRequest = iota
+
+	// HTTPResponse defines an HTTP response
 	HTTPResponse
 )
 
+// Endpoint represents an endpoint defined in the RAML specs
 type Endpoint struct {
 	Addr     string // complete endpoint address
 	Method   *raml.Method
@@ -18,6 +24,7 @@ type Endpoint struct {
 	Verb     string
 }
 
+// ResourceName returns resource name of an endpoint
 func (ep Endpoint) ResourceName() string {
 	name := ep.Addr
 	splt := strings.Split(name, "/")
@@ -69,4 +76,14 @@ func getEndpointsOfResource(parentPath string, r *raml.Resource, endpoints map[s
 	for _, v := range r.Nested {
 		getEndpointsOfResource(parentPath+r.URI, v, endpoints)
 	}
+}
+
+// PascalCaseTypeName generates pascalcase type name from snackcase method name
+func PascalCaseTypeName(tip TypeInBody) string {
+	methodName := commons.SnackCaseServerMethodName(tip.Endpoint.Method.DisplayName, tip.Endpoint.Verb, tip.Endpoint.Resource)
+	suffix := commons.ReqBodySuffix
+	if tip.ReqResp == HTTPResponse {
+		suffix = commons.RespBodySuffix
+	}
+	return casee.ToPascalCase(methodName + suffix)
 }
