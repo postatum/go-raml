@@ -232,7 +232,7 @@ func (r *Resource) assignMethod(m *Method, name string) {
 	case "OPTIONS":
 		r.Options = m
 	default:
-		log.Fatalf("assignMethod fatal error, invalid method name:%v", name)
+		log.Panicf("assignMethod fatal error, invalid method name:%v", name)
 	}
 }
 
@@ -301,7 +301,7 @@ func getParamValue(param string, dicts map[string]interface{}) (string, bool) {
 			var ok bool
 			val, ok = doInflect(val, inflector)
 			if !ok {
-				log.Fatalf("invalid inflector " + inflector)
+				log.Panicf("invalid inflector " + inflector)
 			}
 		}
 	}
